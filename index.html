@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Fechamento TM">
+<meta name="theme-color" content="#f6f1ea">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.png">
+<title>Fechamento · Clínica TM</title>
+<style>
+  :root{
+    --bg:#f6f1ea; --card:#fffdf9; --ink:#2b2320; --muted:#7d716a; --line:#e6ddd3;
+    --accent:#8a5a44; --accent-ink:#fff; --soft:#f1e6dc; --ok:#2f7a4f; --err:#b3261e;
+    --r:16px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  main{max-width:560px;margin:0 auto;padding:16px 16px calc(120px + env(safe-area-inset-bottom))}
+  header{display:flex;align-items:baseline;justify-content:space-between;padding:8px 2px 14px}
+  header h1{font-size:22px;margin:0;font-weight:650;letter-spacing:-.01em}
+  header small{color:var(--muted)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px}
+  .card h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .card h2 .req{color:var(--accent)}
+  label.lbl{display:block;font-size:15px;color:var(--muted);margin:12px 0 6px}
+  input[type=text],input[type=date],input[type=time],input[type=datetime-local],input[type=password],input[inputmode],textarea,select{
+    width:100%;font:inherit;font-size:18px;padding:14px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink)}
+  textarea{min-height:84px;resize:vertical}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);border-color:transparent}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:12px 16px;font:inherit;font-size:16px;color:var(--ink);min-height:48px}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  .chip.add{border-style:dashed;color:var(--accent)}
+  .seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .seg .chip{border-radius:12px;text-align:center}
+  .pac{display:flex;gap:12px;align-items:center;width:100%;text-align:left;border:1.5px solid var(--line);background:#fff;border-radius:12px;padding:12px 14px;margin-bottom:8px;font:inherit;color:var(--ink);min-height:56px}
+  .pac .h{font-variant-numeric:tabular-nums;color:var(--muted);font-size:15px;min-width:46px}
+  .pac .n{flex:1;font-weight:560}
+  .pac .e{display:block;font-weight:400;font-size:14px;color:var(--muted)}
+  .pac.on{border-color:var(--accent);background:var(--soft)}
+  .pac.done{opacity:.55}
+  .pac .tag{font-size:13px;color:var(--ok);font-weight:600}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .row2>div{min-width:0}
+  .sub{background:var(--soft);border-radius:12px;padding:12px;margin-top:12px}
+  .sub .row2 label.lbl{margin-top:4px}
+  .hint{font-size:14px;color:var(--muted);margin-top:8px}
+  .warn{font-size:14px;color:var(--err);margin-top:8px}
+  .foto{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .btn{display:block;width:100%;border:0;border-radius:14px;padding:16px;font:inherit;font-size:18px;font-weight:600;background:var(--accent);color:var(--accent-ink);min-height:56px}
+  .btn.sec{background:#fff;color:var(--accent);border:1.5px solid var(--accent)}
+  .btn:disabled{opacity:.5}
+  .prev{margin-top:12px;display:none;position:relative}
+  .prev img{width:100%;max-height:320px;object-fit:contain;border-radius:12px;background:#eee}
+  .prev .pdf{padding:14px;background:var(--soft);border-radius:12px}
+  .bar{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(transparent,var(--bg) 30%);padding:20px 16px calc(14px + env(safe-area-inset-bottom))}
+  .bar .in{max-width:560px;margin:0 auto}
+  .total{display:flex;justify-content:space-between;font-size:15px;color:var(--muted);margin-bottom:8px;padding:0 4px}
+  .screen{display:none} .screen.on{display:block}
+  .center{text-align:center;padding:40px 8px}
+  .big{font-size:48px;margin-bottom:8px}
+  .err-box{background:#fbeceb;color:var(--err);border-radius:12px;padding:12px;margin:10px 0;display:none;font-size:15px}
+  .link{background:none;border:0;color:var(--accent);font:inherit;text-decoration:underline;padding:8px 0}
+  .hide{display:none!important}
+  .ok-list{margin:16px 0 0;padding:0;list-style:none;text-align:left}
+  .ok-list li{padding:8px 0;border-bottom:1px solid var(--line);font-size:15px}
+  .ok-list li b{color:var(--ok)}
+</style>
+</head>
+<body>
+<main>
+
+<!-- PIN -->
+<section id="tela-pin" class="screen">
+  <div class="center">
+    <div class="big">🔒</div>
+    <h1 style="font-size:22px;margin:0 0 6px">Fechamento de pacientes</h1>
+    <p style="color:var(--muted);margin:0 0 20px">Digite o código da clínica</p>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off" style="text-align:center;font-size:28px;letter-spacing:.3em">
+    <div id="pin-err" class="err-box"></div>
+    <button class="btn" style="margin-top:14px" onclick="entrar()">Entrar</button>
+  </div>
+</section>
+
+<!-- FORMULÁRIO -->
+<section id="tela-form" class="screen">
+  <header><h1>Fechamento</h1><small id="hoje"></small></header>
+
+  <div class="card">
+    <h2>Paciente <span class="req">*</span></h2>
+    <div id="agenda"><div class="hint">Carregando agenda do Amigo…</div></div>
+    <button class="link" id="btn-outro" onclick="pacienteAvulso()">Paciente não está na lista</button>
+    <div id="box-avulso" class="hide">
+      <label class="lbl">Nome completo</label>
+      <input type="text" id="nome" autocapitalize="words" autocomplete="off">
+    </div>
+    <label class="lbl">Data e hora do atendimento</label>
+    <input type="datetime-local" id="data">
+  </div>
+
+  <div class="card">
+    <h2>Pagamento <span class="req">*</span></h2>
+    <div class="chips" id="formas"></div>
+
+    <div id="box-valor">
+      <label class="lbl">Valor pago</label>
+      <input id="valor" inputmode="decimal" placeholder="R$ 0,00">
+      <div class="hint" id="hint-japago" style="display:none">Já estava pago: pode deixar R$ 0,00.</div>
+    </div>
+
+    <div id="box-parcelas" class="sub hide">
+      <label class="lbl" style="margin-top:0">Número de parcelas</label>
+      <select id="parcelas"></select>
+    </div>
+
+    <div id="box-2cartoes" class="sub hide">
+      <div class="row2">
+        <div><label class="lbl">Cartão 1 · valor</label><input id="c1v" inputmode="decimal" placeholder="R$ 0,00"></div>
+        <div><label class="lbl">Parcelas</label><select id="c1p"></select></div>
+        <div><label class="lbl">Cartão 2 · valor</label><input id="c2v" inputmode="decimal" placeholder="R$ 0,00"></div>
+        <div><label class="lbl">Parcelas</label><select id="c2p"></select></div>
+      </div>
+      <div class="hint" id="soma2"></div>
+    </div>
+
+    <div id="box-cartaopix" class="sub hide">
+      <div class="row2">
+        <div><label class="lbl">Cartão · valor</label><input id="cpv" inputmode="decimal" placeholder="R$ 0,00"></div>
+        <div><label class="lbl">Parcelas</label><select id="cpp"></select></div>
+      </div>
+      <label class="lbl">Pix · valor</label><input id="pxv" inputmode="decimal" placeholder="R$ 0,00">
+      <div class="hint" id="soma3"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Procedimento realizado <span class="req">*</span></h2>
+    <div class="chips" id="procs"></div>
+    <div id="box-novo" class="sub hide">
+      <label class="lbl" style="margin-top:0">Nome do procedimento novo</label>
+      <input type="text" id="novo-proc" autocapitalize="sentences">
+      <div class="row2" style="margin-top:10px">
+        <button class="btn sec" onclick="cancelarNovo()">Cancelar</button>
+        <button class="btn" onclick="salvarNovo()">Adicionar</button>
+      </div>
+    </div>
+    <label class="lbl">Observação do procedimento (opcional)</label>
+    <textarea id="obs" placeholder="Ex.: preenchimento labial, botox terço superior"></textarea>
+  </div>
+
+  <div class="card">
+    <h2>Agendou próxima consulta? <span class="req">*</span></h2>
+    <div class="seg" id="seg-prox">
+      <button class="chip" data-v="1">Sim</button><button class="chip" data-v="0">Não</button>
+    </div>
+    <div id="box-prox" class="sub hide">
+      <div class="row2">
+        <div><label class="lbl" style="margin-top:0">Data</label><input type="date" id="prox-data"></div>
+        <div><label class="lbl" style="margin-top:0">Hora (opcional)</label><input type="time" id="prox-hora"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Paciente antiga? <span class="req">*</span></h2>
+    <div class="seg" id="seg-antiga">
+      <button class="chip" data-v="1">Sim</button><button class="chip" data-v="0">Não</button>
+    </div>
+    <div id="box-origem" class="hide">
+      <label class="lbl">Como conheceu?</label>
+      <div class="chips" id="origens"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Recibo / comprovante <span class="req">*</span></h2>
+    <div class="foto">
+      <button class="btn sec" onclick="document.getElementById('cam').click()">📷 Tirar foto</button>
+      <button class="btn sec" onclick="document.getElementById('arq').click()">📁 Escolher</button>
+    </div>
+    <input type="file" id="cam" accept="image/*" capture="environment" class="hide">
+    <input type="file" id="arq" accept="image/*,application/pdf" class="hide">
+    <div class="prev" id="prev"></div>
+  </div>
+
+  <div id="form-err" class="err-box"></div>
+
+  <div class="bar"><div class="in">
+    <div class="total"><span id="resumo-pac">Nenhum paciente</span><span id="resumo-valor"></span></div>
+    <button class="btn" id="btn-salvar" onclick="salvar()">Salvar fechamento</button>
+  </div></div>
+</section>
+
+<!-- SUCESSO -->
+<section id="tela-ok" class="screen">
+  <div class="center">
+    <div class="big">✅</div>
+    <h1 style="font-size:22px;margin:0 0 6px" id="ok-titulo">Fechamento salvo</h1>
+    <p style="color:var(--muted);margin:0" id="ok-sub"></p>
+    <ul class="ok-list" id="ok-lista"></ul>
+    <button class="btn" style="margin-top:24px" onclick="novo()">Próximo paciente</button>
+  </div>
+</section>
+
+</main>
+
+<script>
+// ====== CONFIGURAÇÃO (preenchida no deploy) ======
+const API = "https://iwhwuertqibtpocjhqnn.supabase.co/functions/v1/fechamento";
+const ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml3aHd1ZXJ0cWlidHBvY2pocW5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUxMjExMDgsImV4cCI6MjExMDY5NzEwOH0.gIzhUbjyImYDCOJI7foNzywYj0ZYaRT6kOtsERtwFrY";
+// ================================================
+
+const FORMAS = [
+  ["ja_pago","Já estava pago"],["pix","Pix"],["debito","Débito"],["credito_vista","Crédito à vista"],
+  ["credito_parcelado","Crédito parcelado"],["dois_cartoes","2 cartões"],["cartao_pix","Cartão + Pix"],
+];
+const $ = (id) => document.getElementById(id);
+let st;
+
+function estadoInicial(){
+  return { id: uuid(), paciente:null, forma:null, procs:new Set(), prox:null, antiga:null, origem:null, arquivo:null };
+}
+function uuid(){ return crypto.randomUUID ? crypto.randomUUID() :
+  "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c=="x"?r:(r&3|8)).toString(16)}); }
+const pin = () => { try { return localStorage.getItem("tm_pin") || ""; } catch { return ""; } };
+
+async function api(acao, opts={}, extra=""){
+  const r = await fetch(`${API}?acao=${acao}${extra}`, { ...opts,
+    headers: { "x-app-pin": pin(), "authorization": `Bearer ${ANON}`, "apikey": ANON, ...(opts.headers||{}) } });
+  const j = await r.json().catch(()=>({erro:"Resposta inválida do servidor"}));
+  if (!r.ok) throw Object.assign(new Error(j.erro || `Erro ${r.status}`), { status:r.status });
+  return j;
+}
+
+function tela(n){ document.querySelectorAll(".screen").forEach(s=>s.classList.toggle("on", s.id===`tela-${n}`)); scrollTo(0,0); }
+
+// ---------- moeda ----------
+function parseBRL(s){ const d = String(s||"").replace(/\D/g,""); return d ? Number(d)/100 : 0; }
+function fmtBRL(v){ return v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+function mascara(el){ el.addEventListener("input",()=>{ const v=parseBRL(el.value); el.value = v ? fmtBRL(v) : ""; atualizar(); }); }
+
+// ---------- datas ----------
+function agoraLocal(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
+function hojeISO(){ return agoraLocal().slice(0,10); }
+
+// ---------- montagem ----------
+function opcoesParcelas(sel, min=1){ sel.innerHTML = ""; for(let i=min;i<=12;i++){ const o=document.createElement("option"); o.value=i; o.textContent = i===1?"À vista":`${i}x`; sel.appendChild(o);} }
+
+function chips(cont, itens, multi, onPick){
+  cont.innerHTML="";
+  itens.forEach(([v,t])=>{ const b=document.createElement("button"); b.className="chip"; b.textContent=t; b.dataset.v=v;
+    b.onclick=()=>onPick(v,b); cont.appendChild(b); });
+}
+
+function montarFormas(){
+  chips($("formas"), FORMAS, false, (v)=>{ st.forma=v;
+    [...$("formas").children].forEach(b=>b.classList.toggle("on", b.dataset.v===v));
+    $("box-parcelas").classList.toggle("hide", v!=="credito_parcelado");
+    $("box-2cartoes").classList.toggle("hide", v!=="dois_cartoes");
+    $("box-cartaopix").classList.toggle("hide", v!=="cartao_pix");
+    $("hint-japago").style.display = v==="ja_pago" ? "block" : "none";
+    if (v==="ja_pago" && !parseBRL($("valor").value)) $("valor").value="";
+    atualizar();
+  });
+}
+
+let LISTA_PROCS = [];
+function montarProcs(){
+  const itens = LISTA_PROCS.map(p=>[p,p]); itens.push(["__novo","+ Adicionar novo"]);
+  chips($("procs"), itens, true, (v,b)=>{
+    if (v==="__novo"){ $("box-novo").classList.remove("hide"); $("novo-proc").focus(); return; }
+    st.procs.has(v) ? st.procs.delete(v) : st.procs.add(v); b.classList.toggle("on"); atualizar();
+  });
+  [...$("procs").children].forEach(b=>{ if(b.dataset.v==="__novo") b.classList.add("add"); if(st.procs.has(b.dataset.v)) b.classList.add("on"); });
+}
+function cancelarNovo(){ $("novo-proc").value=""; $("box-novo").classList.add("hide"); }
+async function salvarNovo(){
+  const nome=$("novo-proc").value.trim(); if(nome.length<2) return;
+  try{ const r=await api("procedimento",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({nome})});
+    if(!LISTA_PROCS.includes(r.nome)) LISTA_PROCS.push(r.nome); st.procs.add(r.nome); montarProcs(); cancelarNovo(); atualizar();
+  }catch(e){ erro(e.message); }
+}
+
+function montarSeg(id, onPick){
+  [...$(id).children].forEach(b=>b.onclick=()=>{ [...$(id).children].forEach(x=>x.classList.toggle("on",x===b)); onPick(b.dataset.v==="1"); });
+}
+
+let ORIGENS = {indicacao:"Indicação",google:"Google",instagram:"Instagram",chatgpt:"ChatGPT",site:"Site",tiktok:"TikTok",nao_sei:"Não sei"};
+function montarOrigens(){
+  chips($("origens"), Object.entries(ORIGENS), false, (v)=>{ st.origem=v; [...$("origens").children].forEach(b=>b.classList.toggle("on",b.dataset.v===v)); });
+}
+
+async function carregarAgenda(){
+  const box=$("agenda");
+  try{
+    const r = await api("agenda",{}, `&data=${hojeISO()}`);
+    if(!r.pacientes.length){ box.innerHTML='<div class="hint">Nenhum paciente na agenda de hoje.</div>'; pacienteAvulso(); return; }
+    box.innerHTML="";
+    r.pacientes.forEach(p=>{
+      const b=document.createElement("button"); b.className="pac"+(p.fechado?" done":"");
+      b.innerHTML=`<span class="h">${p.hora}</span><span class="n">${esc(p.nome)}<span class="e">${esc(p.evento)}</span></span>${p.fechado?'<span class="tag">fechado</span>':""}`;
+      b.onclick=()=>{
+        if(p.fechado && !confirm(`${p.nome} já foi fechada hoje. Fazer outro fechamento mesmo assim?`)) return;
+        st.paciente=p; $("box-avulso").classList.add("hide"); $("nome").value="";
+        [...box.children].forEach(x=>x.classList.toggle("on",x===b));
+        $("data").value = `${hojeISO()}T${p.hora}`; atualizar();
+      };
+      box.appendChild(b);
+    });
+  }catch(e){
+    if(e.status===401){ sair(); return; }
+    box.innerHTML=`<div class="warn">Não consegui abrir a agenda do Amigo (${esc(e.message)}). Digite o nome abaixo.</div>`; pacienteAvulso();
+  }
+}
+function pacienteAvulso(){ st.paciente=null; [...$("agenda").children].forEach(x=>x.classList.remove("on")); $("box-avulso").classList.remove("hide"); $("nome").focus(); atualizar(); }
+
+async function carregarListas(){
+  try{ const r=await api("listas"); LISTA_PROCS=r.procedimentos; }catch(e){ LISTA_PROCS=["Consulta","Retorno","Botox","Preenchimento","Sculptra","Ultraformer","Laser","NCTF","Mesoterapia capilar","Peeling","Limpeza de pele","Remoção de lesão","Hialuronidase"]; }
+  montarProcs();
+}
+
+// ---------- recibo (comprime foto) ----------
+async function escolherArquivo(file){
+  if(!file) return;
+  const prev=$("prev"); prev.style.display="block";
+  if(file.type==="application/pdf"){ st.arquivo=file; prev.innerHTML=`<div class="pdf">📄 ${esc(file.name)}</div>`; atualizar(); return; }
+  prev.innerHTML='<div class="hint">Preparando foto…</div>';
+  try{ st.arquivo = await comprimir(file); }catch{ st.arquivo=file; }
+  prev.innerHTML=`<img src="${URL.createObjectURL(st.arquivo)}" alt="recibo">`; atualizar();
+}
+function comprimir(file, max=1800, q=.82){
+  return new Promise((ok,ko)=>{ const img=new Image(); img.onload=()=>{ const s=Math.min(1,max/Math.max(img.width,img.height));
+    const c=document.createElement("canvas"); c.width=Math.round(img.width*s); c.height=Math.round(img.height*s);
+    c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+    c.toBlob(b=>b?ok(new File([b],"recibo.jpg",{type:"image/jpeg"})):ko(),"image/jpeg",q); };
+    img.onerror=ko; img.src=URL.createObjectURL(file); });
+}
+
+// ---------- resumo e validação ----------
+function nomeAtual(){ return st.paciente ? st.paciente.nome : $("nome").value.trim(); }
+function pagamentos(){
+  if(st.forma==="dois_cartoes") return [{metodo:"cartao",valor:parseBRL($("c1v").value),parcelas:+$("c1p").value},{metodo:"cartao",valor:parseBRL($("c2v").value),parcelas:+$("c2p").value}];
+  if(st.forma==="cartao_pix") return [{metodo:"cartao",valor:parseBRL($("cpv").value),parcelas:+$("cpp").value},{metodo:"pix",valor:parseBRL($("pxv").value)}];
+  if(!st.forma) return [];
+  return [{metodo:st.forma,valor:parseBRL($("valor").value),parcelas: st.forma==="credito_parcelado"?+$("parcelas").value:(st.forma.startsWith("credito")?1:undefined)}];
+}
+function atualizar(){
+  $("resumo-pac").textContent = nomeAtual() || "Nenhum paciente";
+  const v=parseBRL($("valor").value); $("resumo-valor").textContent = st.forma ? fmtBRL(v) : "";
+  const soma = pagamentos().reduce((s,p)=>s+(p.valor||0),0);
+  const msg = (el)=>{ if(!v){ el.textContent=""; return; } const dif=v-soma; el.className = Math.abs(dif)<.01?"hint":"warn";
+    el.textContent = Math.abs(dif)<.01 ? "Soma confere ✓" : `Soma ${fmtBRL(soma)} · ${dif>0?"faltam":"sobram"} ${fmtBRL(Math.abs(dif))}`; };
+  if(st.forma==="dois_cartoes") msg($("soma2")); if(st.forma==="cartao_pix") msg($("soma3"));
+}
+function coletar(){
+  const faltas=[];
+  const nome=nomeAtual(); if(!nome) faltas.push("paciente");
+  if(!$("data").value) faltas.push("data do atendimento");
+  if(!st.forma) faltas.push("método de pagamento");
+  const valor=parseBRL($("valor").value);
+  if(st.forma && st.forma!=="ja_pago" && !valor) faltas.push("valor pago");
+  if(st.forma==="dois_cartoes"||st.forma==="cartao_pix"){ const s=pagamentos().reduce((a,p)=>a+p.valor,0); if(Math.abs(s-valor)>.01) faltas.push("soma dos pagamentos não bate com o valor pago"); }
+  if(!st.procs.size) faltas.push("procedimento");
+  if(st.prox===null) faltas.push("se agendou próxima consulta");
+  if(st.prox && !$("prox-data").value) faltas.push("data da próxima consulta");
+  if(st.antiga===null) faltas.push("se é paciente antiga");
+  if(st.antiga===false && !st.origem) faltas.push("como conheceu");
+  if(!st.arquivo) faltas.push("foto do recibo");
+  if(faltas.length) return { faltas };
+  return { dados:{
+    id:st.id, data_atendimento:$("data").value, paciente_nome:nome,
+    amigo_patient_id: st.paciente?.patient_id ?? null, amigo_attendance_id: st.paciente?.attendance_id ?? null,
+    valor_pago:valor, forma_pagamento:st.forma, pagamentos:pagamentos(),
+    parcelas: st.forma==="credito_parcelado" ? +$("parcelas").value : null,
+    agendou_proxima:st.prox, proxima_consulta: st.prox ? ($("prox-data").value + ($("prox-hora").value?`T${$("prox-hora").value}`:"")) : null,
+    procedimentos:[...st.procs], obs_procedimento:$("obs").value.trim()||null,
+    paciente_antiga:st.antiga, como_conheceu: st.antiga ? null : st.origem,
+  }};
+}
+
+function erro(msg){ const b=$("form-err"); b.textContent=msg; b.style.display="block"; b.scrollIntoView({behavior:"smooth",block:"center"}); }
+
+async function salvar(){
+  $("form-err").style.display="none";
+  const c=coletar();
+  if(c.faltas){ erro("Falta preencher: "+c.faltas.join(", ")+"."); return; }
+  const btn=$("btn-salvar"); btn.disabled=true; btn.textContent="Salvando…";
+  try{
+    const fd=new FormData(); fd.append("dados",JSON.stringify(c.dados)); fd.append("recibo",st.arquivo,st.arquivo.name||"recibo.jpg");
+    const r=await api("salvar",{method:"POST",body:fd});
+    $("ok-titulo").textContent = `${c.dados.paciente_nome}`;
+    $("ok-sub").textContent = `${fmtBRL(c.dados.valor_pago)} · ${c.dados.procedimentos.join(", ")}`;
+    const pl = r.repetido ? "já estava salvo" : r.planilha?.status==="ok" ? `<b>lançado</b> na linha ${r.planilha.linha}` :
+      r.planilha?.status==="duplicado" ? "já estava na planilha hoje, não lancei de novo" : `<span style="color:var(--err)">não entrou (${esc(r.planilha?.erro||"erro")}). Avise o André.</span>`;
+    $("ok-lista").innerHTML = `<li>Planilha: ${pl}</li><li>Recibo: <b>guardado</b></li><li>Prontuário: na fila do fechamento do dia</li>`;
+    tela("ok");
+  }catch(e){
+    if(e.status===401){ sair(); return; }
+    erro(e.message.includes("Failed to fetch") ? "Sem internet. Confira a conexão e toque em Salvar de novo." : e.message);
+  }finally{ btn.disabled=false; btn.textContent="Salvar fechamento"; }
+}
+
+function novo(){
+  st=estadoInicial();
+  ["nome","valor","c1v","c2v","cpv","pxv","obs","prox-data","prox-hora","novo-proc"].forEach(i=>$(i).value="");
+  ["cam","arq"].forEach(i=>$(i).value="");
+  $("prev").style.display="none"; $("prev").innerHTML="";
+  document.querySelectorAll(".chip.on").forEach(b=>b.classList.remove("on"));
+  ["box-parcelas","box-2cartoes","box-cartaopix","box-prox","box-origem","box-novo","box-avulso"].forEach(i=>$(i).classList.add("hide"));
+  $("hint-japago").style.display="none"; $("form-err").style.display="none";
+  $("data").value=agoraLocal(); $("hoje").textContent=new Date().toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"2-digit"});
+  montarProcs(); atualizar(); tela("form"); carregarAgenda();
+}
+
+async function entrar(){
+  const v=$("pin").value.trim(); if(!v) return;
+  try{ localStorage.setItem("tm_pin",v); }catch{}
+  try{ await api("ping"); $("pin-err").style.display="none"; iniciar(); }
+  catch(e){ $("pin-err").textContent = e.status===401?"Código errado.":e.message; $("pin-err").style.display="block"; }
+}
+function sair(){ try{ localStorage.removeItem("tm_pin"); }catch{} tela("pin"); }
+
+function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function iniciar(){ novo(); carregarListas(); }
+
+// eventos fixos
+[["parcelas",2],["c1p",1],["c2p",1],["cpp",1]].forEach(([i,m])=>opcoesParcelas($(i),m));
+["valor","c1v","c2v","cpv","pxv"].forEach(i=>mascara($(i)));
+["c1p","c2p","cpp","parcelas"].forEach(i=>$(i).addEventListener("change",atualizar));
+$("nome").addEventListener("input",atualizar);
+$("cam").onchange=(e)=>escolherArquivo(e.target.files[0]);
+$("arq").onchange=(e)=>escolherArquivo(e.target.files[0]);
+$("pin").addEventListener("keydown",e=>{ if(e.key==="Enter") entrar(); });
+st=estadoInicial();
+montarFormas(); montarOrigens();
+montarSeg("seg-prox", v=>{ st.prox=v; $("box-prox").classList.toggle("hide",!v); });
+montarSeg("seg-antiga", v=>{ st.antiga=v; $("box-origem").classList.toggle("hide",v); if(v) st.origem=null; });
+pin() ? iniciar() : tela("pin");
+</script>
+</body>
+</html>

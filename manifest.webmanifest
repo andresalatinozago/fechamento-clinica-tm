@@ -1,0 +1,9 @@
+{
+  "name": "Fechamento · Clínica TM",
+  "short_name": "Fechamento TM",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f6f1ea",
+  "theme_color": "#f6f1ea",
+  "icons": [{ "src": "icon.png", "sizes": "512x512", "type": "image/png" }]
+}
