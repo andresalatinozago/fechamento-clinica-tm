@@ -28,6 +28,10 @@
   input[type=text],input[type=date],input[type=time],input[type=datetime-local],input[type=password],input[inputmode],textarea,select{
     width:100%;font:inherit;font-size:18px;padding:14px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink)}
   textarea{min-height:84px;resize:vertical}
+  input,select,textarea{display:block;max-width:100%;min-width:0}
+  input[type=date]{-webkit-appearance:none;appearance:none;min-height:54px;text-align:left}
+  input[type=date]::-webkit-date-and-time-value{text-align:left}
+  select{-webkit-appearance:none;appearance:none;min-height:54px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237d716a' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat right 14px center;padding-right:34px}
   input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);border-color:transparent}
   .chips{display:flex;flex-wrap:wrap;gap:8px}
   .chip{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:12px 16px;font:inherit;font-size:16px;color:var(--ink);min-height:48px}
@@ -96,8 +100,10 @@
       <label class="lbl">Nome completo</label>
       <input type="text" id="nome" autocapitalize="words" autocomplete="off">
     </div>
-    <label class="lbl">Data e hora do atendimento</label>
-    <input type="datetime-local" id="data">
+    <div class="row2">
+      <div><label class="lbl">Data do atendimento</label><input type="date" id="data"></div>
+      <div><label class="lbl">Hora</label><select id="hora"></select></div>
+    </div>
   </div>
 
   <div class="card">
@@ -158,7 +164,7 @@
     <div id="box-prox" class="sub hide">
       <div class="row2">
         <div><label class="lbl" style="margin-top:0">Data</label><input type="date" id="prox-data"></div>
-        <div><label class="lbl" style="margin-top:0">Hora (opcional)</label><input type="time" id="prox-hora"></div>
+        <div><label class="lbl" style="margin-top:0">Hora (opcional)</label><select id="prox-hora"></select></div>
       </div>
     </div>
   </div>
@@ -250,6 +256,14 @@ function mascara(el){ el.addEventListener("input",()=>{ const v=parseBRL(el.valu
 // ---------- datas ----------
 function agoraLocal(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
 function hojeISO(){ return agoraLocal().slice(0,10); }
+function horas15(sel, vazio){
+  sel.innerHTML = vazio ? '<option value="">sem horário</option>' : "";
+  for(let m=7*60;m<=22*60;m+=15){ const h=String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
+    const o=document.createElement("option"); o.value=h; o.textContent=h; sel.appendChild(o); }
+}
+function arred15(hhmm){ const [h,m]=hhmm.split(":").map(Number); let t=Math.round((h*60+m)/15)*15; t=Math.min(Math.max(t,7*60),22*60);
+  return String(Math.floor(t/60)).padStart(2,"0")+":"+String(t%60).padStart(2,"0"); }
+function setHora(sel,hhmm){ const v=arred15(hhmm); sel.value=v; }
 
 // ---------- montagem ----------
 function opcoesParcelas(sel, min=1){ sel.innerHTML = ""; for(let i=min;i<=12;i++){ const o=document.createElement("option"); o.value=i; o.textContent = i===1?"À vista":`${i}x`; sel.appendChild(o);} }
@@ -311,7 +325,7 @@ async function carregarAgenda(){
         if(p.fechado && !confirm(`${p.nome} já foi fechada hoje. Fazer outro fechamento mesmo assim?`)) return;
         st.paciente=p; $("box-avulso").classList.add("hide"); $("nome").value="";
         [...box.children].forEach(x=>x.classList.toggle("on",x===b));
-        $("data").value = `${hojeISO()}T${p.hora}`; atualizar();
+        $("data").value = hojeISO(); setHora($("hora"), p.hora); atualizar();
       };
       box.appendChild(b);
     });
@@ -366,7 +380,7 @@ function precisaRecibo(){ return !!st.forma && st.forma!=="ja_pago" && parseBRL(
 function coletar(){
   const faltas=[];
   const nome=nomeAtual(); if(!nome) faltas.push("paciente");
-  if(!$("data").value) faltas.push("data do atendimento");
+  if(!$("data").value || !$("hora").value) faltas.push("data do atendimento");
   if(!st.forma) faltas.push("método de pagamento");
   const valor=parseBRL($("valor").value);
   if(st.forma && st.forma!=="ja_pago" && !valor) faltas.push("valor pago");
@@ -380,7 +394,7 @@ function coletar(){
   if(!st.arquivo && precisaRecibo()) faltas.push("foto do recibo");
   if(faltas.length) return { faltas };
   return { dados:{
-    id:st.id, data_atendimento:$("data").value, paciente_nome:nome,
+    id:st.id, data_atendimento:`${$("data").value}T${$("hora").value}`, paciente_nome:nome,
     amigo_patient_id: st.paciente?.patient_id ?? null, amigo_attendance_id: st.paciente?.attendance_id ?? null,
     valor_pago:valor, forma_pagamento:st.forma, pagamentos:pagamentos(),
     parcelas: st.forma==="credito_parcelado" ? +$("parcelas").value : null,
@@ -421,7 +435,7 @@ function novo(){
   document.querySelectorAll(".chip.on").forEach(b=>b.classList.remove("on"));
   ["box-parcelas","box-2cartoes","box-cartaopix","box-prox","box-origem","box-novo","box-avulso"].forEach(i=>$(i).classList.add("hide"));
   $("hint-japago").style.display="none"; $("form-err").style.display="none";
-  $("data").value=agoraLocal(); $("hoje").textContent=new Date().toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"2-digit"});
+  $("data").value=hojeISO(); setHora($("hora"), agoraLocal().slice(11,16)); $("hoje").textContent=new Date().toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"2-digit"});
   montarProcs(); atualizar(); tela("form"); carregarAgenda();
 }
 
@@ -438,6 +452,7 @@ function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&
 function iniciar(){ novo(); carregarListas(); }
 
 // eventos fixos
+horas15($("hora"), false); horas15($("prox-hora"), true);
 [["parcelas",2],["c1p",1],["c2p",1],["cpp",1]].forEach(([i,m])=>opcoesParcelas($(i),m));
 ["valor","c1v","c2v","cpv","pxv"].forEach(i=>mascara($(i)));
 ["c1p","c2p","cpp","parcelas"].forEach(i=>$(i).addEventListener("change",atualizar));
