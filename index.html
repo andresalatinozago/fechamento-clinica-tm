@@ -175,7 +175,8 @@
   </div>
 
   <div class="card">
-    <h2>Recibo / comprovante <span class="req">*</span></h2>
+    <h2>Recibo / comprovante <span class="req" id="req-recibo">*</span></h2>
+    <div class="hint" id="hint-recibo" style="margin:-4px 0 12px">Obrigatório quando houver pagamento.</div>
     <div class="foto">
       <button class="btn sec" onclick="document.getElementById('cam').click()">📷 Tirar foto</button>
       <button class="btn sec" onclick="document.getElementById('arq').click()">📁 Escolher</button>
@@ -353,7 +354,10 @@ function atualizar(){
   const msg = (el)=>{ if(!v){ el.textContent=""; return; } const dif=v-soma; el.className = Math.abs(dif)<.01?"hint":"warn";
     el.textContent = Math.abs(dif)<.01 ? "Soma confere ✓" : `Soma ${fmtBRL(soma)} · ${dif>0?"faltam":"sobram"} ${fmtBRL(Math.abs(dif))}`; };
   if(st.forma==="dois_cartoes") msg($("soma2")); if(st.forma==="cartao_pix") msg($("soma3"));
+  const exige=precisaRecibo(); $("req-recibo").style.display=exige?"inline":"none";
+  $("hint-recibo").textContent = exige ? "Obrigatório: houve pagamento." : "Opcional: sem pagamento hoje.";
 }
+function precisaRecibo(){ return !!st.forma && st.forma!=="ja_pago" && parseBRL($("valor").value)>0; }
 function coletar(){
   const faltas=[];
   const nome=nomeAtual(); if(!nome) faltas.push("paciente");
@@ -367,7 +371,7 @@ function coletar(){
   if(st.prox && !$("prox-data").value) faltas.push("data da próxima consulta");
   if(st.antiga===null) faltas.push("se é paciente antiga");
   if(st.antiga===false && !st.origem) faltas.push("como conheceu");
-  if(!st.arquivo) faltas.push("foto do recibo");
+  if(!st.arquivo && precisaRecibo()) faltas.push("foto do recibo");
   if(faltas.length) return { faltas };
   return { dados:{
     id:st.id, data_atendimento:$("data").value, paciente_nome:nome,
@@ -388,13 +392,13 @@ async function salvar(){
   if(c.faltas){ erro("Falta preencher: "+c.faltas.join(", ")+"."); return; }
   const btn=$("btn-salvar"); btn.disabled=true; btn.textContent="Salvando…";
   try{
-    const fd=new FormData(); fd.append("dados",JSON.stringify(c.dados)); fd.append("recibo",st.arquivo,st.arquivo.name||"recibo.jpg");
+    const fd=new FormData(); fd.append("dados",JSON.stringify(c.dados)); if(st.arquivo) fd.append("recibo",st.arquivo,st.arquivo.name||"recibo.jpg");
     const r=await api("salvar",{method:"POST",body:fd});
     $("ok-titulo").textContent = `${c.dados.paciente_nome}`;
     $("ok-sub").textContent = `${fmtBRL(c.dados.valor_pago)} · ${c.dados.procedimentos.join(", ")}`;
     const pl = r.repetido ? "já estava salvo" : r.planilha?.status==="ok" ? `<b>lançado</b> na linha ${r.planilha.linha}` :
       r.planilha?.status==="duplicado" ? "já estava na planilha hoje, não lancei de novo" : `<span style="color:var(--err)">não entrou (${esc(r.planilha?.erro||"erro")}). Avise o André.</span>`;
-    $("ok-lista").innerHTML = `<li>Planilha: ${pl}</li><li>Recibo: <b>guardado</b></li><li>Prontuário: na fila do fechamento do dia</li>`;
+    $("ok-lista").innerHTML = `<li>Planilha: ${pl}</li><li>Recibo: ${r.recibo?"<b>guardado</b>":"sem recibo (não houve pagamento)"}</li><li>Prontuário: na fila do fechamento do dia</li>`;
     tela("ok");
   }catch(e){
     if(e.status===401){ sair(); return; }

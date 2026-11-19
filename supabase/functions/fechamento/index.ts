@@ -150,18 +150,23 @@ async function rotaSalvar(req: Request) {
   f.paciente_nome = titleCaseNome(f.paciente_nome ?? "");
   const erros = validar(f);
   const arquivo = form.get("recibo");
-  if (!(arquivo instanceof File) || !arquivo.size) erros.push("Foto do recibo");
+  const temArquivo = arquivo instanceof File && arquivo.size > 0;
+  const houvePagamento = f.forma_pagamento !== "ja_pago" && f.valor_pago > 0;
+  if (houvePagamento && !temArquivo) erros.push("Foto do recibo");
   if (erros.length) return json({ erro: "Falta preencher: " + erros.join(", ") }, 400);
 
   // Já salvo (toque duplo)? devolve o que já existe
   const { data: existente } = await sb.from("fechamentos").select("planilha_status, planilha_linha").eq("id", f.id).maybeSingle();
   if (existente) return json({ ok: true, repetido: true, ...existente });
 
-  const file = arquivo as File;
-  const ext = (file.name.split(".").pop() || (file.type.includes("pdf") ? "pdf" : "jpg")).toLowerCase();
-  const caminho = nomeArquivoRecibo(f, ext);
-  const up = await sb.storage.from("recibos").upload(caminho, file, { contentType: file.type || "image/jpeg", upsert: false });
-  if (up.error) return json({ erro: `Recibo não subiu: ${up.error.message}` }, 500);
+  let caminho: string | null = null;
+  if (temArquivo) {
+    const file = arquivo as File;
+    const ext = (file.name.split(".").pop() || (file.type.includes("pdf") ? "pdf" : "jpg")).toLowerCase();
+    caminho = nomeArquivoRecibo(f, ext);
+    const up = await sb.storage.from("recibos").upload(caminho, file, { contentType: file.type || "image/jpeg", upsert: false });
+    if (up.error) return json({ erro: `Recibo não subiu: ${up.error.message}` }, 500);
+  }
 
   const resumo = resumoProntuario(f);
   const { data: ins, error } = await sb.from("fechamentos").insert({
@@ -186,7 +191,7 @@ async function rotaSalvar(req: Request) {
   }).select("recibo_token").single();
   if (error) return json({ erro: `Não salvou: ${error.message}` }, 500);
 
-  const link = `${Deno.env.get("SUPABASE_URL")}/functions/v1/fechamento?acao=recibo&t=${ins.recibo_token}`;
+  const link = caminho ? `${Deno.env.get("SUPABASE_URL")}/functions/v1/fechamento?acao=recibo&t=${ins.recibo_token}` : null;
   let planilha: { aba: string; linha: number | null; status: string; erro?: string };
   try {
     planilha = await gravarNaPlanilha(f, link);
@@ -197,7 +202,7 @@ async function rotaSalvar(req: Request) {
     planilha_status: planilha.status, planilha_aba: planilha.aba, planilha_linha: planilha.linha, planilha_erro: planilha.erro ?? null,
   }).eq("id", f.id);
 
-  return json({ ok: true, planilha, resumo, data: dataBR(f.data_atendimento) });
+  return json({ ok: true, planilha, resumo, recibo: !!caminho, data: dataBR(f.data_atendimento) });
 }
 
 async function rotaRecibo(url: URL) {
