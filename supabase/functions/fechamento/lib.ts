@@ -25,6 +25,13 @@ export const ORIGENS: Record<string, string> = {
   nao_sei: "não sei",
 };
 
+export const NF_TIPOS: Record<string, string> = {
+  nao: "",
+  consulta: "pendente: consulta",
+  imposto: "pendente: imposto",
+  consulta_imposto: "pendente: consulta + imposto",
+};
+
 // Eventos da agenda do Amigo que não são paciente
 const IGNORAR = [/^nf\b/i, /representante/i, /hands on/i, /fabi - atendimentos particulares/i, /laser fabi/i];
 
@@ -46,10 +53,11 @@ export interface Fechamento {
   obs_procedimento?: string | null;
   paciente_antiga: boolean;
   como_conheceu?: string | null;  // chave de ORIGENS
+  nf_tipo?: string | null;        // chave de NF_TIPOS
 }
 
 export const norm = (s: unknown) =>
-  String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+  String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 
 export function titleCaseNome(nome: string): string {
   const minusc = new Set(["de", "da", "do", "das", "dos", "e", "la", "del"]);
@@ -109,6 +117,7 @@ export function validar(f: Fechamento): string[] {
     if (Math.abs(soma - f.valor_pago) > 0.01) erros.push(`Soma dos pagamentos (${brl(soma)}) diferente do valor pago (${brl(f.valor_pago)})`);
   }
   if (f.agendou_proxima && !f.proxima_consulta) erros.push("Data da próxima consulta");
+  if (!(f.nf_tipo && f.nf_tipo in NF_TIPOS)) erros.push("Nota fiscal");
   if (!f.paciente_antiga && !(f.como_conheceu && f.como_conheceu in ORIGENS)) erros.push("Como conheceu");
   return erros;
 }
@@ -149,7 +158,7 @@ export function filtrarAgenda(itens: any[]) {
 
 export interface Colunas {
   data: number; nome: number; valor: number; procs: number[]; origem: number; obs: number;
-  forma?: number; parcelas?: number; proxima?: number; recibo?: number;
+  forma?: number; parcelas?: number; proxima?: number; recibo?: number; nf?: number;
 }
 
 export function mapearColunas(cabecalho: string[]): Colunas {
@@ -169,6 +178,7 @@ export function mapearColunas(cabecalho: string[]): Colunas {
   opt("parcelas", (s) => s === "parcelas");
   opt("proxima", (s) => s.startsWith("proxima consulta"));
   opt("recibo", (s) => s.startsWith("recibo"));
+  opt("nf", (s) => s.startsWith("notas fiscais") || s === "nota fiscal" || s === "nf");
   const faltando = (["data", "nome", "valor", "origem", "obs"] as const).filter((k) => (c as any)[k] < 0);
   if (!procs.length) faltando.push("procedimento" as any);
   if (faltando.length) throw new Error(`Colunas não encontradas no cabeçalho: ${faltando.join(", ")}`);
@@ -222,6 +232,11 @@ export function celulasLinha(
   const pag = textoPagamento(f);
   if (c.forma === undefined) obs.push(`Pagamento: ${pag}`);
   if (c.proxima === undefined && f.agendou_proxima && f.proxima_consulta) obs.push(`Próxima: ${dataBR(f.proxima_consulta)}`);
+  const nf = NF_TIPOS[f.nf_tipo ?? ""] ?? "";
+  if (nf) {
+    if (c.nf !== undefined) cel.push({ col: c.nf, valor: nf });
+    else obs.push(`NF ${nf}`);
+  }
   if (obs.length) cel.push({ col: c.obs, valor: obs.join(" · ") });
 
   if (c.forma !== undefined) cel.push({ col: c.forma, valor: pag });

@@ -188,6 +188,7 @@ async function rotaSalvar(req: Request) {
     como_conheceu: f.paciente_antiga ? null : f.como_conheceu,
     recibo_path: caminho,
     resumo_prontuario: resumo,
+    nf_tipo: f.nf_tipo ?? null,
   }).select("recibo_token").single();
   if (error) return json({ erro: `Não salvou: ${error.message}` }, 500);
 

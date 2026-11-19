@@ -175,6 +175,11 @@
   </div>
 
   <div class="card">
+    <h2>Nota fiscal <span class="req">*</span></h2>
+    <div class="chips" id="nfs"></div>
+  </div>
+
+  <div class="card">
     <h2>Recibo / comprovante <span class="req" id="req-recibo">*</span></h2>
     <div class="hint" id="hint-recibo" style="margin:-4px 0 12px">Obrigatório quando houver pagamento.</div>
     <div class="foto">
@@ -221,7 +226,7 @@ const $ = (id) => document.getElementById(id);
 let st;
 
 function estadoInicial(){
-  return { id: uuid(), paciente:null, forma:null, procs:new Set(), prox:null, antiga:null, origem:null, arquivo:null };
+  return { id: uuid(), paciente:null, forma:null, procs:new Set(), prox:null, antiga:null, origem:null, nf:null, arquivo:null };
 }
 function uuid(){ return crypto.randomUUID ? crypto.randomUUID() :
   "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c=="x"?r:(r&3|8)).toString(16)}); }
@@ -371,6 +376,7 @@ function coletar(){
   if(st.prox && !$("prox-data").value) faltas.push("data da próxima consulta");
   if(st.antiga===null) faltas.push("se é paciente antiga");
   if(st.antiga===false && !st.origem) faltas.push("como conheceu");
+  if(!st.nf) faltas.push("nota fiscal");
   if(!st.arquivo && precisaRecibo()) faltas.push("foto do recibo");
   if(faltas.length) return { faltas };
   return { dados:{
@@ -381,6 +387,7 @@ function coletar(){
     agendou_proxima:st.prox, proxima_consulta: st.prox ? ($("prox-data").value + ($("prox-hora").value?`T${$("prox-hora").value}`:"")) : null,
     procedimentos:[...st.procs], obs_procedimento:$("obs").value.trim()||null,
     paciente_antiga:st.antiga, como_conheceu: st.antiga ? null : st.origem,
+    nf_tipo: st.nf,
   }};
 }
 
@@ -440,6 +447,7 @@ $("arq").onchange=(e)=>escolherArquivo(e.target.files[0]);
 $("pin").addEventListener("keydown",e=>{ if(e.key==="Enter") entrar(); });
 st=estadoInicial();
 montarFormas(); montarOrigens();
+chips($("nfs"), [["nao","Não"],["consulta","Consulta"],["imposto","Imposto"],["consulta_imposto","Consulta + imposto"]], false, (v)=>{ st.nf=v; [...$("nfs").children].forEach(b=>b.classList.toggle("on",b.dataset.v===v)); });
 montarSeg("seg-prox", v=>{ st.prox=v; $("box-prox").classList.toggle("hide",!v); });
 montarSeg("seg-antiga", v=>{ st.antiga=v; $("box-origem").classList.toggle("hide",v); if(v) st.origem=null; });
 pin() ? iniciar() : tela("pin");
