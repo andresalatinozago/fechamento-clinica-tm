@@ -1,0 +1,7 @@
+-- Aplicadas pelo painel em 19-20/11/2026 (staging_importacao, historico_pacientes_atendimentos_notas,
+-- views_historico, fechamento_vira_atendimento). Resumo do que existe:
+--   staging.planilha, staging.amigo_atendimentos, staging.amigo_pacientes  (dados brutos da importação)
+--   public.pacientes, public.atendimentos, public.notas_fiscais            (histórico normalizado)
+--   public.v_pacientes_resumo, public.v_faturamento_mensal, public.v_revisao
+--   gatilho trg_fechamento_atendimento: cada fechamento do app vira atendimento + NF pendente
+-- O SQL completo está no histórico de migrações do projeto Supabase (list_migrations).
