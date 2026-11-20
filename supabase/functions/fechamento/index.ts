@@ -9,7 +9,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import {
-  abaDoMes, celulasLinha, colLetra, dataBR, Fechamento, filtrarAgenda, jaLancado, mapearColunas,
+  abaDoMes, blocosNotas, celulasLinha, celulasNotas, gerarNotas, NotaPlanejada, colLetra, dataBR, Fechamento, filtrarAgenda, jaLancado, mapearColunas,
   nomeArquivoRecibo, ORIGENS, primeiraLinhaLivre, resumoProntuario, serialData, titleCaseNome, validar,
 } from "./lib.ts";
 
@@ -111,6 +111,28 @@ async function gravarNaPlanilha(f: Fechamento, linkRecibo: string | null) {
   return { aba, linha, status: "ok" };
 }
 
+/** Escreve uma linha por nota no bloco do mês, nas abas "Notas fiscais AAAA". */
+async function gravarNotasNasAbas(nome: string, valorTotal: number, notas: NotaPlanejada[]) {
+  const porAno = new Map<string, NotaPlanejada[]>();
+  for (const n of notas) { const y = n.data.slice(0, 4); porAno.set(y, [...(porAno.get(y) ?? []), n]); }
+  const feitas: string[] = [];
+  const data: { range: string; values: unknown[][] }[] = [];
+  for (const [ano, lista] of porAno) {
+    const aba = `Notas fiscais ${ano}`;
+    const g = await sheets(`/values/${encodeURIComponent(`'${aba}'!A1:DZ1000`)}?valueRenderOption=UNFORMATTED_VALUE`);
+    const vals: unknown[][] = g.values ?? [];
+    if (vals.length < 2) throw new Error(`Aba ${aba} não encontrada ou sem cabeçalho`);
+    const blocos = blocosNotas(vals[0], vals[1]);
+    const cel = celulasNotas(lista, nome, valorTotal, blocos, vals.slice(2));
+    for (const c of cel) data.push({ range: `'${aba}'!${colLetra(c.col)}${c.linha}`, values: [[c.valor]] });
+    feitas.push(`${aba}: ${lista.length}`);
+  }
+  if (data.length) {
+    await sheets(`/values:batchUpdate`, { method: "POST", body: JSON.stringify({ valueInputOption: "USER_ENTERED", data }) });
+  }
+  return feitas.join(" · ");
+}
+
 // ---------- Rotas ----------
 async function exigirPin(req: Request) {
   const pin = req.headers.get("x-app-pin") ?? "";
@@ -169,6 +191,7 @@ async function rotaSalvar(req: Request) {
   }
 
   const resumo = resumoProntuario(f);
+  const notas = f.nf_tipo === "com" && f.nf_plano ? gerarNotas(f.nf_plano, f.data_atendimento) : [];
   const { data: ins, error } = await sb.from("fechamentos").insert({
     id: f.id,
     data_atendimento: `${f.data_atendimento.slice(0, 16)}:00-03:00`,
@@ -189,6 +212,8 @@ async function rotaSalvar(req: Request) {
     recibo_path: caminho,
     resumo_prontuario: resumo,
     nf_tipo: f.nf_tipo ?? null,
+    nf_plano: f.nf_tipo === "com" ? f.nf_plano : null,
+    nf_notas: notas.length ? notas : null,
   }).select("recibo_token").single();
   if (error) return json({ erro: `Não salvou: ${error.message}` }, 500);
 
@@ -199,11 +224,18 @@ async function rotaSalvar(req: Request) {
   } catch (e) {
     planilha = { aba: abaDoMes(f.data_atendimento), linha: null, status: "erro", erro: String((e as Error).message) };
   }
+  let abasNotas: { status: string; detalhe?: string; erro?: string } | null = null;
+  if (notas.length && planilha.status !== "duplicado") {
+    try { abasNotas = { status: "ok", detalhe: await gravarNotasNasAbas(f.paciente_nome, f.valor_pago, notas) }; }
+    catch (e) { abasNotas = { status: "erro", erro: String((e as Error).message) }; }
+  }
+  const erroAbas = abasNotas?.status === "erro" ? `Abas de notas: ${abasNotas.erro}` : null;
   await sb.from("fechamentos").update({
-    planilha_status: planilha.status, planilha_aba: planilha.aba, planilha_linha: planilha.linha, planilha_erro: planilha.erro ?? null,
+    planilha_status: planilha.status, planilha_aba: planilha.aba, planilha_linha: planilha.linha,
+    planilha_erro: [planilha.erro, erroAbas].filter(Boolean).join(" · ") || null,
   }).eq("id", f.id);
 
-  return json({ ok: true, planilha, resumo, recibo: !!caminho, data: dataBR(f.data_atendimento) });
+  return json({ ok: true, planilha, notas, abas_notas: abasNotas, resumo, recibo: !!caminho, data: dataBR(f.data_atendimento) });
 }
 
 async function rotaRecibo(url: URL) {

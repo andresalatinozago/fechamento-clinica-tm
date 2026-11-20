@@ -27,6 +27,9 @@ export const ORIGENS: Record<string, string> = {
 
 export const NF_TIPOS: Record<string, string> = {
   nao: "",
+  nao_pagou: "não pagou",
+  com: "", // texto montado a partir das notas (textoNF)
+  // legado (versões antigas do app)
   consulta: "pendente: consulta",
   imposto: "pendente: imposto",
   consulta_imposto: "pendente: consulta + imposto",
@@ -54,6 +57,133 @@ export interface Fechamento {
   paciente_antiga: boolean;
   como_conheceu?: string | null;  // chave de ORIGENS
   nf_tipo?: string | null;        // chave de NF_TIPOS
+  nf_plano?: PlanoNF | null;      // quando nf_tipo = "com"
+}
+
+// ---------- Notas fiscais ----------
+// Consulta = nota de consulta (a única que pode ser fracionada, mês a mês).
+// Imposto = nota de procedimento estético (sempre uma só).
+export interface PlanoNF {
+  consultas_qtd: number;          // 0 = nenhuma
+  consulta_valor: number;         // valor de cada nota de consulta
+  consulta_primeira?: string;     // AAAA-MM-DD (padrão: dia do atendimento)
+  consulta_dias?: number;         // intervalo entre notas (padrão 30)
+  consulta_ultima_valor?: number | null; // se a última for diferente (ex.: 9×700 + 600)
+  imposto_valor: number;          // 0 = sem nota de imposto
+  imposto_data?: string;          // padrão: dia do atendimento
+}
+export interface NotaPlanejada {
+  tipo: "consulta" | "imposto"; valor: number; data: string; parcela: string | null; obs: string;
+}
+
+const DIAS_SEMANA = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+const isoUTC = (iso: string) => { const [y, m, d] = iso.slice(0, 10).split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)); };
+const paraIso = (dt: Date) => dt.toISOString().slice(0, 10);
+export function somaDias(iso: string, n: number): string { const d = isoUTC(iso); d.setUTCDate(d.getUTCDate() + n); return paraIso(d); }
+/** Sábado e domingo passam para segunda. */
+export function diaUtil(iso: string): { data: string; movida: boolean; dow: number } {
+  const dow = isoUTC(iso).getUTCDay();
+  if (dow === 6) return { data: somaDias(iso, 2), movida: true, dow };
+  if (dow === 0) return { data: somaDias(iso, 1), movida: true, dow };
+  return { data: iso.slice(0, 10), movida: false, dow };
+}
+const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+const r2 = (v: number) => Math.round(v * 100) / 100;
+
+export function gerarNotas(p: PlanoNF, dataAtendimento: string): NotaPlanejada[] {
+  const dia = dataAtendimento.slice(0, 10);
+  const notas: NotaPlanejada[] = [];
+  const n = Math.max(0, Math.floor(p.consultas_qtd || 0));
+  const primeira = (p.consulta_primeira || dia).slice(0, 10);
+  const passo = p.consulta_dias && p.consulta_dias > 0 ? Math.floor(p.consulta_dias) : 30;
+  for (let k = 0; k < n; k++) {
+    const original = somaDias(primeira, k * passo);
+    const u = diaUtil(original);
+    const valor = k === n - 1 && n > 1 && p.consulta_ultima_valor != null ? p.consulta_ultima_valor : p.consulta_valor;
+    let obs = n > 1 ? `Pacote de ${dataBR(dia)}, a cada ${passo} dias` : "consulta";
+    if (u.movida) obs = `${passo} dias caiu em ${ddmm(original)} (${DIAS_SEMANA[u.dow]}), passou para ${ddmm(u.data)}`;
+    notas.push({ tipo: "consulta", valor: r2(valor), data: u.data, parcela: n > 1 ? `${k + 1}/${n}` : null, obs });
+  }
+  if (p.imposto_valor > 0) {
+    const u = diaUtil((p.imposto_data || dia).slice(0, 10));
+    notas.push({ tipo: "imposto", valor: r2(p.imposto_valor), data: u.data, parcela: null, obs: "imposto (procedimento)" });
+  }
+  return notas;
+}
+
+export const somaNotas = (notas: NotaPlanejada[]) => r2(notas.reduce((s, x) => s + x.valor, 0));
+
+/** Texto da coluna "notas fiscais" do Controle (é a fila que o fechamento do dia lê). */
+export function textoNF(f: Fechamento, notas: NotaPlanejada[] | null): string {
+  if (f.nf_tipo !== "com") return NF_TIPOS[f.nf_tipo ?? ""] ?? "";
+  if (!notas?.length) return "";
+  const dia = f.data_atendimento.slice(0, 10);
+  const partes: string[] = [];
+  const cons = notas.filter((x) => x.tipo === "consulta");
+  const p = f.nf_plano!;
+  if (cons.length === 1) partes.push(`consulta ${brl(cons[0].valor)}${cons[0].data !== dia ? ` em ${ddmm(cons[0].data)}` : ""}`);
+  if (cons.length > 1) {
+    const passo = p.consulta_dias && p.consulta_dias > 0 ? p.consulta_dias : 30;
+    let t = `${cons.length} consultas de ${brl(p.consulta_valor)} a cada ${passo} dias`;
+    const ult = cons[cons.length - 1].valor;
+    if (ult !== r2(p.consulta_valor)) t += ` (última ${brl(ult)})`;
+    t += cons[0].data !== dia ? `, a 1ª em ${ddmm(cons[0].data)}` : "";
+    partes.push(t);
+  }
+  const imp = notas.find((x) => x.tipo === "imposto");
+  if (imp) partes.push(`imposto ${brl(imp.valor)}${imp.data !== dia ? ` em ${ddmm(imp.data)}` : ""}`);
+  let txt = `pendente: ${partes.join(" + ")}`;
+  const soma = somaNotas(notas);
+  if (Math.abs(soma - f.valor_pago) > 0.009) txt += ` · soma das notas ${brl(soma)} diferente do valor pago ${brl(f.valor_pago)}`;
+  return txt;
+}
+
+/** Abas "Notas fiscais AAAA": um bloco por mês (Nome, Emitir NFS em, ..., Obs). Os blocos não têm largura fixa. */
+export interface BlocoNF { mes: number; nome: number; emitir?: number; total?: number; parcela?: number; valor?: number; obs?: number; fim: number }
+export function blocosNotas(linha1: unknown[], linha2: unknown[]): BlocoNF[] {
+  const h = linha2.map(norm);
+  const inicios = h.map((s, i) => (s === "nome" ? i : -1)).filter((i) => i >= 0);
+  const meses = MESES.map(norm);
+  const blocos: BlocoNF[] = [];
+  inicios.forEach((ini, bi) => {
+    const fim = bi + 1 < inicios.length ? inicios[bi + 1] : h.length;
+    let mes = -1;
+    for (let c = ini; c < fim; c++) { const m = meses.indexOf(norm(linha1[c])); if (m >= 0) { mes = m; break; } }
+    if (mes < 0 && bi === 0) mes = 0; // janeiro às vezes fica sem rótulo
+    if (mes < 0) return;
+    const achar = (p: (s: string) => boolean) => { for (let c = ini; c < fim; c++) if (p(h[c])) return c; return undefined; };
+    blocos.push({
+      mes, nome: ini, fim,
+      emitir: achar((s) => s.startsWith("emitir")),
+      total: achar((s) => s === "valor total"),
+      parcela: achar((s) => s === "parcela"),
+      valor: achar((s) => s.startsWith("valor da nota")),
+      obs: achar((s) => s === "obs"),
+    });
+  });
+  return blocos;
+}
+
+/** Linhas (a partir da 3) a escrever nas abas de notas. dados = valores da linha 3 em diante. */
+export function celulasNotas(
+  notas: NotaPlanejada[], nome: string, valorTotal: number, blocos: BlocoNF[], dados: unknown[][],
+): { linha: number; col: number; valor: string | number }[] {
+  const ocupadas = new Map<number, number>(); // bloco.nome -> próxima linha livre
+  const out: { linha: number; col: number; valor: string | number }[] = [];
+  for (const n of notas) {
+    const mes = Number(n.data.slice(5, 7)) - 1;
+    const b = blocos.find((x) => x.mes === mes);
+    if (!b) throw new Error(`Bloco de ${MESES[mes]} não encontrado`);
+    let linha = ocupadas.get(b.nome) ?? primeiraLinhaLivre(dados, b.nome, 3);
+    ocupadas.set(b.nome, linha + 1);
+    out.push({ linha, col: b.nome, valor: titleCaseNome(nome) });
+    if (b.emitir !== undefined) out.push({ linha, col: b.emitir, valor: serialData(n.data) });
+    if (b.total !== undefined) out.push({ linha, col: b.total, valor: r2(valorTotal) });
+    if (b.parcela !== undefined && n.parcela) out.push({ linha, col: b.parcela, valor: `'${n.parcela}` });
+    if (b.valor !== undefined) out.push({ linha, col: b.valor, valor: n.valor });
+    if (b.obs !== undefined) out.push({ linha, col: b.obs, valor: n.obs });
+  }
+  return out;
 }
 
 export const norm = (s: unknown) =>
@@ -118,6 +248,16 @@ export function validar(f: Fechamento): string[] {
   }
   if (f.agendou_proxima && !f.proxima_consulta) erros.push("Data da próxima consulta");
   if (!(f.nf_tipo && f.nf_tipo in NF_TIPOS)) erros.push("Nota fiscal");
+  if (f.nf_tipo === "com") {
+    const p = f.nf_plano;
+    if (!p) erros.push("Notas fiscais (plano)");
+    else {
+      if (!(p.consultas_qtd >= 0 && p.consultas_qtd <= 60)) erros.push("Quantidade de notas de consulta");
+      if (p.consultas_qtd > 0 && !(p.consulta_valor > 0)) erros.push("Valor da nota de consulta");
+      if (!(p.imposto_valor >= 0)) erros.push("Valor da nota de imposto");
+      if (!(p.consultas_qtd > 0) && !(p.imposto_valor > 0)) erros.push("Pelo menos uma nota");
+    }
+  }
   if (!f.paciente_antiga && !(f.como_conheceu && f.como_conheceu in ORIGENS)) erros.push("Como conheceu");
   return erros;
 }
@@ -232,7 +372,7 @@ export function celulasLinha(
   const pag = textoPagamento(f);
   if (c.forma === undefined) obs.push(`Pagamento: ${pag}`);
   if (c.proxima === undefined && f.agendou_proxima && f.proxima_consulta) obs.push(`Próxima: ${dataBR(f.proxima_consulta)}`);
-  const nf = NF_TIPOS[f.nf_tipo ?? ""] ?? "";
+  const nf = textoNF(f, f.nf_tipo === "com" && f.nf_plano ? gerarNotas(f.nf_plano, f.data_atendimento) : null);
   if (nf) {
     if (c.nf !== undefined) cel.push({ col: c.nf, valor: nf });
     else obs.push(`NF ${nf}`);

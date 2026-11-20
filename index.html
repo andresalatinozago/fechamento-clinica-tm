@@ -71,6 +71,10 @@
   .ok-list{margin:16px 0 0;padding:0;list-style:none;text-align:left}
   .ok-list li{padding:8px 0;border-bottom:1px solid var(--line);font-size:15px}
   .ok-list li b{color:var(--ok)}
+  .nfl{display:flex;justify-content:space-between;gap:8px;font-size:15px;padding:6px 0;border-bottom:1px dashed var(--line)}
+  .nfl:last-child{border-bottom:0}
+  .nfl .t{color:var(--muted);font-variant-numeric:tabular-nums}
+  .sec-t{font-size:15px;font-weight:600;margin:14px 0 2px}
 </style>
 </head>
 <body>
@@ -183,6 +187,24 @@
   <div class="card">
     <h2>Nota fiscal <span class="req">*</span></h2>
     <div class="chips" id="nfs"></div>
+    <div id="box-nf" class="hide">
+      <div class="sec-t">Notas de consulta</div>
+      <div class="row2">
+        <div><label class="lbl">Quantidade</label><input id="nf-qtd" inputmode="numeric" value="1"></div>
+        <div><label class="lbl">Valor de cada</label><input id="nf-cval" inputmode="numeric"></div>
+      </div>
+      <div class="row2" id="nf-rep">
+        <div><label class="lbl">1ª nota em</label><input type="date" id="nf-cdata"></div>
+        <div><label class="lbl">Repetir a cada (dias)</label><input id="nf-dias" inputmode="numeric" value="30"></div>
+      </div>
+      <div id="nf-ult-box"><label class="lbl">Valor da última consulta</label><input id="nf-ult" inputmode="numeric"></div>
+      <div class="sec-t">Nota de imposto (procedimento)</div>
+      <div class="row2">
+        <div><label class="lbl">Valor</label><input id="nf-ival" inputmode="numeric"></div>
+        <div><label class="lbl">Data</label><input type="date" id="nf-idata"></div>
+      </div>
+      <div class="sub" id="nf-prev"></div>
+    </div>
   </div>
 
   <div class="card">
@@ -232,7 +254,7 @@ const $ = (id) => document.getElementById(id);
 let st;
 
 function estadoInicial(){
-  return { id: uuid(), paciente:null, forma:null, procs:new Set(), prox:null, antiga:null, origem:null, nf:null, arquivo:null };
+  return { id: uuid(), paciente:null, forma:null, procs:new Set(), prox:null, antiga:null, origem:null, nf:null, nfTocado:false, ivalTocado:false, arquivo:null };
 }
 function uuid(){ return crypto.randomUUID ? crypto.randomUUID() :
   "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c=="x"?r:(r&3|8)).toString(16)}); }
@@ -358,6 +380,60 @@ function comprimir(file, max=1800, q=.82){
     img.onerror=ko; img.src=URL.createObjectURL(file); });
 }
 
+
+// ---------- notas fiscais ----------
+const DSEM=["domingo","segunda","terça","quarta","quinta","sexta","sábado"];
+function isoMais(iso,n){ const [y,m,d]=iso.split("-").map(Number); const t=new Date(Date.UTC(y,m-1,d+n)); return t.toISOString().slice(0,10); }
+function diaUtil(iso){ const [y,m,d]=iso.split("-").map(Number); const w=new Date(Date.UTC(y,m-1,d)).getUTCDay(); return w===6?isoMais(iso,2):w===0?isoMais(iso,1):iso; }
+const ddmm=(iso)=>iso.slice(8,10)+"/"+iso.slice(5,7)+(iso.slice(0,4)!==hojeISO().slice(0,4)?"/"+iso.slice(2,4):"");
+function inteiro(id,def){ const v=parseInt(String($(id).value).replace(/\D/g,""),10); return isNaN(v)?def:v; }
+function planoNF(){
+  const qtd=Math.min(60,inteiro("nf-qtd",0));
+  return { consultas_qtd:qtd, consulta_valor:parseBRL($("nf-cval").value), consulta_primeira:$("nf-cdata").value||$("data").value,
+    consulta_dias:Math.max(1,inteiro("nf-dias",30)), consulta_ultima_valor: qtd>1 && $("nf-ult").value ? parseBRL($("nf-ult").value) : null,
+    imposto_valor:parseBRL($("nf-ival").value), imposto_data:$("nf-idata").value||$("data").value };
+}
+function notasDoPlano(p){
+  const out=[]; for(let k=0;k<p.consultas_qtd;k++){ const v=(k===p.consultas_qtd-1&&p.consultas_qtd>1&&p.consulta_ultima_valor!=null)?p.consulta_ultima_valor:p.consulta_valor;
+    out.push({tipo:"consulta",valor:v,data:diaUtil(isoMais(p.consulta_primeira,k*p.consulta_dias)),parcela:p.consultas_qtd>1?`${k+1}/${p.consultas_qtd}`:""}); }
+  if(p.imposto_valor>0) out.push({tipo:"imposto",valor:p.imposto_valor,data:diaUtil(p.imposto_data),parcela:""});
+  return out;
+}
+function abrirNF(){
+  if(!$("nf-cval").value) $("nf-cval").value=fmtBRL(700);
+  if(!$("nf-cdata").value) $("nf-cdata").value=$("data").value;
+  if(!$("nf-idata").value) $("nf-idata").value=$("data").value;
+  st.ivalTocado=false; atualizarNF();
+}
+function atualizarNF(){
+  if(st.nf!=="com") return;
+  const total=parseBRL($("valor").value);
+  const qtd=inteiro("nf-qtd",0);
+  $("nf-rep").classList.toggle("hide",qtd<2); $("nf-ult-box").classList.toggle("hide",qtd<2);
+  if(qtd<2) $("nf-ult").value="";
+  if(!st.ivalTocado){ const cons=qtd*parseBRL($("nf-cval").value); const resto=Math.max(0,Math.round((total-cons)*100)/100); $("nf-ival").value=resto?fmtBRL(resto):""; }
+  const notas=notasDoPlano(planoNF());
+  const soma=notas.reduce((a,n)=>a+n.valor,0); const dif=Math.round((total-soma)*100)/100;
+  let h=notas.map(n=>`<div class="nfl"><span>${n.tipo==="consulta"?"Consulta":"Imposto"} ${n.parcela}</span><span class="t">${ddmm(n.data)} · ${fmtBRL(n.valor)}</span></div>`).join("");
+  if(!notas.length) h='<div class="hint" style="margin:0">Nenhuma nota. Coloque pelo menos uma consulta ou o valor do imposto.</div>';
+  h+= Math.abs(dif)<.01 ? `<div class="hint">Soma ${fmtBRL(soma)} confere com o valor pago ✓</div>`
+     : `<div class="warn">Soma ${fmtBRL(soma)} · ${dif>0?"faltam":"sobram"} ${fmtBRL(Math.abs(dif))} em relação ao valor pago</div>`+
+       (qtd>=1 ? `<button class="link" onclick="ajustarUltima()">Ajustar na última consulta</button>`:"");
+  $("nf-prev").innerHTML=h;
+}
+function ajustarUltima(){
+  const p=planoNF(); const notas=notasDoPlano(p); const total=parseBRL($("valor").value);
+  const soma=notas.reduce((a,n)=>a+n.valor,0); const ult=notas.filter(n=>n.tipo==="consulta").pop(); if(!ult) return;
+  const novo=Math.round((ult.valor+total-soma)*100)/100; if(novo<=0) return;
+  if(p.consultas_qtd===1) $("nf-cval").value=fmtBRL(novo); else $("nf-ult").value=fmtBRL(novo);
+  atualizarNF();
+}
+function escolherNF(v,auto){
+  st.nf=v; if(!auto) st.nfTocado=true;
+  [...$("nfs").children].forEach(b=>b.classList.toggle("on",b.dataset.v===v));
+  $("box-nf").classList.toggle("hide",v!=="com"); if(v==="com") abrirNF();
+}
+
 // ---------- resumo e validação ----------
 function nomeAtual(){ return st.paciente ? st.paciente.nome : $("nome").value.trim(); }
 function pagamentos(){
@@ -373,6 +449,8 @@ function atualizar(){
   const msg = (el)=>{ if(!v){ el.textContent=""; return; } const dif=v-soma; el.className = Math.abs(dif)<.01?"hint":"warn";
     el.textContent = Math.abs(dif)<.01 ? "Soma confere ✓" : `Soma ${fmtBRL(soma)} · ${dif>0?"faltam":"sobram"} ${fmtBRL(Math.abs(dif))}`; };
   if(st.forma==="dois_cartoes") msg($("soma2")); if(st.forma==="cartao_pix") msg($("soma3"));
+  if(!st.nfTocado && st.forma){ const semPag = st.forma==="ja_pago" || !v; if(semPag && st.nf!=="nao_pagou") escolherNF("nao_pagou",true); else if(!semPag && st.nf==="nao_pagou") { st.nf=null; [...$("nfs").children].forEach(b=>b.classList.remove("on")); } }
+  atualizarNF();
   const exige=precisaRecibo(); $("req-recibo").style.display=exige?"inline":"none";
   $("hint-recibo").textContent = exige ? "Obrigatório: houve pagamento." : "Opcional: sem pagamento hoje.";
 }
@@ -391,6 +469,8 @@ function coletar(){
   if(st.antiga===null) faltas.push("se é paciente antiga");
   if(st.antiga===false && !st.origem) faltas.push("como conheceu");
   if(!st.nf) faltas.push("nota fiscal");
+  if(st.nf==="com"){ const p=planoNF(); if(!notasDoPlano(p).length) faltas.push("pelo menos uma nota fiscal");
+    if(p.consultas_qtd>0 && !p.consulta_valor) faltas.push("valor da nota de consulta"); }
   if(!st.arquivo && precisaRecibo()) faltas.push("foto do recibo");
   if(faltas.length) return { faltas };
   return { dados:{
@@ -401,7 +481,7 @@ function coletar(){
     agendou_proxima:st.prox, proxima_consulta: st.prox ? ($("prox-data").value + ($("prox-hora").value?`T${$("prox-hora").value}`:"")) : null,
     procedimentos:[...st.procs], obs_procedimento:$("obs").value.trim()||null,
     paciente_antiga:st.antiga, como_conheceu: st.antiga ? null : st.origem,
-    nf_tipo: st.nf,
+    nf_tipo: st.nf, nf_plano: st.nf==="com" ? planoNF() : null,
   }};
 }
 
@@ -420,6 +500,7 @@ async function salvar(){
     const pl = r.repetido ? "já estava salvo" : r.planilha?.status==="ok" ? `<b>lançado</b> na linha ${r.planilha.linha}` :
       r.planilha?.status==="duplicado" ? "já estava na planilha hoje, não lancei de novo" : `<span style="color:var(--err)">não entrou (${esc(r.planilha?.erro||"erro")}). Avise o André.</span>`;
     $("ok-lista").innerHTML = `<li>Planilha: ${pl}</li><li>Recibo: ${r.recibo?"<b>guardado</b>":"sem recibo (não houve pagamento)"}</li><li>Prontuário: na fila do fechamento do dia</li>`;
+    if(r.notas?.length) $("ok-lista").innerHTML += `<li>Notas fiscais: ${r.notas.length} na fila${r.abas_notas?.status==="erro"?` <span style="color:var(--err)">(aba de notas não atualizou, avise o André)</span>`:""}</li>`;
     tela("ok");
   }catch(e){
     if(e.status===401){ sair(); return; }
@@ -429,11 +510,12 @@ async function salvar(){
 
 function novo(){
   st=estadoInicial();
-  ["nome","valor","c1v","c2v","cpv","pxv","obs","prox-data","prox-hora","novo-proc"].forEach(i=>$(i).value="");
+  ["nome","valor","c1v","c2v","cpv","pxv","obs","prox-data","prox-hora","novo-proc","nf-cval","nf-cdata","nf-ult","nf-ival","nf-idata"].forEach(i=>$(i).value="");
+  $("nf-qtd").value="1"; $("nf-dias").value="30";
   ["cam","arq"].forEach(i=>$(i).value="");
   $("prev").style.display="none"; $("prev").innerHTML="";
   document.querySelectorAll(".chip.on").forEach(b=>b.classList.remove("on"));
-  ["box-parcelas","box-2cartoes","box-cartaopix","box-prox","box-origem","box-novo","box-avulso"].forEach(i=>$(i).classList.add("hide"));
+  ["box-parcelas","box-2cartoes","box-cartaopix","box-prox","box-origem","box-novo","box-avulso","box-nf"].forEach(i=>$(i).classList.add("hide"));
   $("hint-japago").style.display="none"; $("form-err").style.display="none";
   $("data").value=hojeISO(); setHora($("hora"), agoraLocal().slice(11,16)); $("hoje").textContent=new Date().toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"2-digit"});
   montarProcs(); atualizar(); tela("form"); carregarAgenda();
@@ -462,7 +544,11 @@ $("arq").onchange=(e)=>escolherArquivo(e.target.files[0]);
 $("pin").addEventListener("keydown",e=>{ if(e.key==="Enter") entrar(); });
 st=estadoInicial();
 montarFormas(); montarOrigens();
-chips($("nfs"), [["nao","Não"],["consulta","Consulta"],["imposto","Imposto"],["consulta_imposto","Consulta + imposto"]], false, (v)=>{ st.nf=v; [...$("nfs").children].forEach(b=>b.classList.toggle("on",b.dataset.v===v)); });
+chips($("nfs"), [["nao_pagou","Não pagou"],["nao","Sem nota"],["com","Com nota"]], false, (v)=>escolherNF(v,false));
+$("nf-ival").addEventListener("input",()=>{ st.ivalTocado=true; });
+["nf-cval","nf-ult","nf-ival"].forEach(i=>mascara($(i)));
+["nf-qtd","nf-dias","nf-cdata","nf-idata"].forEach(i=>$(i).addEventListener("input",atualizarNF));
+$("nf-cval").addEventListener("input",atualizarNF);
 montarSeg("seg-prox", v=>{ st.prox=v; $("box-prox").classList.toggle("hide",!v); });
 montarSeg("seg-antiga", v=>{ st.antiga=v; $("box-origem").classList.toggle("hide",v); if(v) st.origem=null; });
 pin() ? iniciar() : tela("pin");
