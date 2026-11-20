@@ -138,7 +138,10 @@ async function rotaCarregar(req: Request) {
   const { tabela, linhas } = await req.json();
   let n = 0;
   for (let i = 0; i < linhas.length; i += 400) {
-    const { data, error } = await sb.rpc("carregar_lote", { p_tabela: tabela, p_linhas: linhas.slice(i, i + 400) });
+    const lote = linhas.slice(i, i + 400);
+    const { data, error } = tabela === "notas_prefeitura" ? await sb.rpc("carregar_notas_prefeitura", { p_linhas: lote })
+      : tabela === "conciliar" ? await sb.rpc("conciliar_parcelas", { p_pares: lote })
+      : await sb.rpc("carregar_lote", { p_tabela: tabela, p_linhas: lote });
     if (error) throw new Error(`${tabela} lote ${i}: ${error.message}`);
     n += data as number;
   }
