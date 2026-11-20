@@ -177,10 +177,11 @@ export function celulasNotas(
     let linha = ocupadas.get(b.nome) ?? primeiraLinhaLivre(dados, b.nome, 3);
     ocupadas.set(b.nome, linha + 1);
     out.push({ linha, col: b.nome, valor: titleCaseNome(nome) });
-    if (b.emitir !== undefined) out.push({ linha, col: b.emitir, valor: serialData(n.data) });
-    if (b.total !== undefined) out.push({ linha, col: b.total, valor: r2(valorTotal) });
+    // Textos no formato da planilha (pt-BR): o Sheets converte em data e moeda mesmo em linha sem formatação
+    if (b.emitir !== undefined) out.push({ linha, col: b.emitir, valor: dataBR(n.data, false) });
+    if (b.total !== undefined) out.push({ linha, col: b.total, valor: brl(valorTotal) });
     if (b.parcela !== undefined && n.parcela) out.push({ linha, col: b.parcela, valor: `'${n.parcela}` });
-    if (b.valor !== undefined) out.push({ linha, col: b.valor, valor: n.valor });
+    if (b.valor !== undefined) out.push({ linha, col: b.valor, valor: brl(n.valor) });
     if (b.obs !== undefined) out.push({ linha, col: b.obs, valor: n.obs });
   }
   return out;
