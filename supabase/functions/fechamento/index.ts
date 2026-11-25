@@ -9,7 +9,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import {
-  abaDoMes, blocosNotas, celulasLinha, celulasNotas, gerarNotas, NotaPlanejada, colLetra, dataBR, Fechamento, filtrarAgenda, jaLancado, mapearColunas,
+  abaDoMes, blocosNotas, exigeRecibo, celulasLinha, celulasNotas, gerarNotas, NotaPlanejada, colLetra, dataBR, Fechamento, filtrarAgenda, jaLancado, mapearColunas,
   nomeArquivoRecibo, ORIGENS, primeiraLinhaLivre, resumoProntuario, serialData, titleCaseNome, validar,
 } from "./lib.ts";
 
@@ -173,8 +173,7 @@ async function rotaSalvar(req: Request) {
   const erros = validar(f);
   const arquivo = form.get("recibo");
   const temArquivo = arquivo instanceof File && arquivo.size > 0;
-  const houvePagamento = f.forma_pagamento !== "ja_pago" && f.valor_pago > 0;
-  if (houvePagamento && !temArquivo) erros.push("Foto do recibo");
+  if (exigeRecibo(f) && !temArquivo) erros.push("Foto do recibo");
   if (erros.length) return json({ erro: "Falta preencher: " + erros.join(", ") }, 400);
 
   // Já salvo (toque duplo)? devolve o que já existe

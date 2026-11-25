@@ -50,6 +50,11 @@
   .row2>div{min-width:0}
   .sub{background:var(--soft);border-radius:12px;padding:12px;margin-top:12px}
   .sub .row2 label.lbl{margin-top:4px}
+  .lp{background:var(--soft);border-radius:12px;padding:10px 12px;margin-top:10px}
+  .lp-top{display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:15px}
+  .lp-x{background:none;border:0;color:var(--muted);font-size:14px;padding:4px 6px}
+  .lp label.lbl{margin-top:6px}
+  input[readonly]{background:var(--soft)}
   .hint{font-size:14px;color:var(--muted);margin-top:8px}
   .warn{font-size:14px;color:var(--err);margin-top:8px}
   .foto{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -112,36 +117,13 @@
 
   <div class="card">
     <h2>Pagamento <span class="req">*</span></h2>
+    <div class="hint" style="margin-top:0">Toque no método para adicionar. Dá pra repetir (ex.: dois cartões).</div>
     <div class="chips" id="formas"></div>
-
+    <div id="linhas-pag"></div>
     <div id="box-valor">
-      <label class="lbl">Valor pago</label>
-      <input id="valor" inputmode="decimal" placeholder="R$ 0,00">
+      <label class="lbl" id="lbl-valor">Total pago</label>
+      <input id="valor" inputmode="decimal" placeholder="R$ 0,00" readonly>
       <div class="hint" id="hint-japago" style="display:none">Já estava pago: pode deixar R$ 0,00.</div>
-    </div>
-
-    <div id="box-parcelas" class="sub hide">
-      <label class="lbl" style="margin-top:0">Número de parcelas</label>
-      <select id="parcelas"></select>
-    </div>
-
-    <div id="box-2cartoes" class="sub hide">
-      <div class="row2">
-        <div><label class="lbl">Cartão 1 · valor</label><input id="c1v" inputmode="decimal" placeholder="R$ 0,00"></div>
-        <div><label class="lbl">Parcelas</label><select id="c1p"></select></div>
-        <div><label class="lbl">Cartão 2 · valor</label><input id="c2v" inputmode="decimal" placeholder="R$ 0,00"></div>
-        <div><label class="lbl">Parcelas</label><select id="c2p"></select></div>
-      </div>
-      <div class="hint" id="soma2"></div>
-    </div>
-
-    <div id="box-cartaopix" class="sub hide">
-      <div class="row2">
-        <div><label class="lbl">Cartão · valor</label><input id="cpv" inputmode="decimal" placeholder="R$ 0,00"></div>
-        <div><label class="lbl">Parcelas</label><select id="cpp"></select></div>
-      </div>
-      <label class="lbl">Pix · valor</label><input id="pxv" inputmode="decimal" placeholder="R$ 0,00">
-      <div class="hint" id="soma3"></div>
     </div>
   </div>
 
@@ -246,15 +228,16 @@ const API = "https://iwhwuertqibtpocjhqnn.supabase.co/functions/v1/fechamento";
 const ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml3aHd1ZXJ0cWlidHBvY2pocW5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUxMjExMDgsImV4cCI6MjExMDY5NzEwOH0.gIzhUbjyImYDCOJI7foNzywYj0ZYaRT6kOtsERtwFrY";
 // ================================================
 
-const FORMAS = [
-  ["ja_pago","Já estava pago"],["pix","Pix"],["debito","Débito"],["credito_vista","Crédito à vista"],
-  ["credito_parcelado","Crédito parcelado"],["dois_cartoes","2 cartões"],["cartao_pix","Cartão + Pix"],
+const METODOS = [
+  ["pix","+ Pix"],["dinheiro","+ Dinheiro R$"],["dinheiro_estrangeiro","+ Dinheiro €/US$"],["debito","+ Débito"],["credito","+ Crédito"],["ja_pago","Já estava pago"],
 ];
+const NOME_MET = { pix:"Pix", dinheiro:"Dinheiro R$", dinheiro_estrangeiro:"Dinheiro €/US$", debito:"Débito", credito:"Crédito" };
+const SIMB = { EUR:"€", USD:"US$" };
 const $ = (id) => document.getElementById(id);
 let st;
 
 function estadoInicial(){
-  return { id: uuid(), paciente:null, forma:null, procs:new Set(), prox:null, antiga:null, origem:null, nf:null, nfTocado:false, ivalTocado:false, arquivo:null };
+  return { id: uuid(), paciente:null, forma:null, procs:new Set(), prox:null, antiga:null, origem:null, nf:null, japago:false, linhas:[], nfTocado:false, ivalTocado:false, arquivo:null };
 }
 function uuid(){ return crypto.randomUUID ? crypto.randomUUID() :
   "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c=="x"?r:(r&3|8)).toString(16)}); }
@@ -297,15 +280,62 @@ function chips(cont, itens, multi, onPick){
 }
 
 function montarFormas(){
-  chips($("formas"), FORMAS, false, (v)=>{ st.forma=v;
-    [...$("formas").children].forEach(b=>b.classList.toggle("on", b.dataset.v===v));
-    $("box-parcelas").classList.toggle("hide", v!=="credito_parcelado");
-    $("box-2cartoes").classList.toggle("hide", v!=="dois_cartoes");
-    $("box-cartaopix").classList.toggle("hide", v!=="cartao_pix");
-    $("hint-japago").style.display = v==="ja_pago" ? "block" : "none";
-    if (v==="ja_pago" && !parseBRL($("valor").value)) $("valor").value="";
-    atualizar();
+  const cont=$("formas"); cont.innerHTML="";
+  METODOS.forEach(([v,t])=>{ const b=document.createElement("button"); b.className="chip"; b.textContent=t; b.dataset.v=v;
+    b.onclick=()=>{ if(v==="ja_pago") alternarJaPago(); else addLinha(v); }; cont.appendChild(b); });
+}
+let seqLinha=0;
+function addLinha(metodo){
+  if(st.japago) alternarJaPago();
+  st.linhas.push({ k:++seqLinha, metodo, valor:0, moeda:"EUR", valor_moeda:0, parcelas:1 });
+  desenharLinhas(); atualizar();
+  const ult=document.querySelector(`#linhas-pag .lp:last-child input`); if(ult) ult.focus();
+}
+function remLinha(k){ st.linhas=st.linhas.filter(l=>l.k!==k); desenharLinhas(); atualizar(); }
+function alternarJaPago(){
+  st.japago=!st.japago; if(st.japago){ st.linhas=[]; desenharLinhas(); }
+  [...$("formas").children].forEach(b=>b.classList.toggle("on", b.dataset.v==="ja_pago" && st.japago));
+  $("valor").readOnly=!st.japago; $("lbl-valor").textContent = st.japago ? "Valor (se quiser registrar)" : "Total pago";
+  $("hint-japago").style.display = st.japago ? "block" : "none";
+  if(st.japago) $("valor").value=""; atualizar();
+}
+function desenharLinhas(){
+  const box=$("linhas-pag"); box.innerHTML="";
+  const repet={}; st.linhas.forEach(l=>repet[l.metodo]=(repet[l.metodo]||0)+1);
+  const cont={};
+  st.linhas.forEach(l=>{
+    cont[l.metodo]=(cont[l.metodo]||0)+1;
+    const titulo=NOME_MET[l.metodo]+(repet[l.metodo]>1?` ${cont[l.metodo]}`:"");
+    const d=document.createElement("div"); d.className="lp";
+    let h=`<div class="lp-top"><span>${titulo}</span><button class="lp-x" type="button">remover ✕</button></div>`;
+    if(l.metodo==="dinheiro_estrangeiro"){
+      h+=`<div class="row2"><div><label class="lbl">Moeda</label><select data-f="moeda"><option value="EUR">Euro (€)</option><option value="USD">Dólar (US$)</option></select></div>
+          <div><label class="lbl">Valor na moeda</label><input data-f="valor_moeda" inputmode="decimal" placeholder="0,00"></div></div>
+          <label class="lbl">Quanto vale em reais</label><input data-f="valor" inputmode="decimal" placeholder="R$ 0,00">`;
+    } else if(l.metodo==="credito"){
+      h+=`<div class="row2"><div><label class="lbl">Valor</label><input data-f="valor" inputmode="decimal" placeholder="R$ 0,00"></div>
+          <div><label class="lbl">Parcelas</label><select data-f="parcelas"></select></div></div>`;
+    } else {
+      h+=`<label class="lbl">Valor</label><input data-f="valor" inputmode="decimal" placeholder="R$ 0,00">`;
+    }
+    d.innerHTML=h; box.appendChild(d);
+    d.querySelector(".lp-x").onclick=()=>remLinha(l.k);
+    const iv=d.querySelector('[data-f="valor"]'); iv.value=l.valor?fmtBRL(l.valor):"";
+    iv.addEventListener("input",()=>{ l.valor=parseBRL(iv.value); iv.value=l.valor?fmtBRL(l.valor):""; atualizar(); });
+    const ps=d.querySelector('[data-f="parcelas"]'); if(ps){ opcoesParcelas(ps,1); ps.value=l.parcelas; ps.onchange=()=>{ l.parcelas=+ps.value; atualizar(); }; }
+    const ms=d.querySelector('[data-f="moeda"]'); if(ms){ ms.value=l.moeda; ms.onchange=()=>{ l.moeda=ms.value; atualizar(); }; }
+    const vm=d.querySelector('[data-f="valor_moeda"]'); if(vm){ vm.value=l.valor_moeda?fmtMoeda(l.valor_moeda):"";
+      vm.addEventListener("input",()=>{ l.valor_moeda=parseBRL(vm.value); vm.value=l.valor_moeda?fmtMoeda(l.valor_moeda):""; atualizar(); }); }
   });
+}
+function fmtMoeda(v){ return v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function formaResumo(){
+  if(st.japago) return "ja_pago";
+  if(!st.linhas.length) return null;
+  if(st.linhas.length>1) return "misto";
+  const l=st.linhas[0];
+  if(l.metodo==="credito") return l.parcelas>1 ? "credito_parcelado" : "credito_vista";
+  return l.metodo;
 }
 
 let LISTA_PROCS = [];
@@ -437,32 +467,32 @@ function escolherNF(v,auto){
 // ---------- resumo e validação ----------
 function nomeAtual(){ return st.paciente ? st.paciente.nome : $("nome").value.trim(); }
 function pagamentos(){
-  if(st.forma==="dois_cartoes") return [{metodo:"cartao",valor:parseBRL($("c1v").value),parcelas:+$("c1p").value},{metodo:"cartao",valor:parseBRL($("c2v").value),parcelas:+$("c2p").value}];
-  if(st.forma==="cartao_pix") return [{metodo:"cartao",valor:parseBRL($("cpv").value),parcelas:+$("cpp").value},{metodo:"pix",valor:parseBRL($("pxv").value)}];
-  if(!st.forma) return [];
-  return [{metodo:st.forma,valor:parseBRL($("valor").value),parcelas: st.forma==="credito_parcelado"?+$("parcelas").value:(st.forma.startsWith("credito")?1:undefined)}];
+  return st.linhas.map(l=>{ const p={metodo:l.metodo, valor:l.valor};
+    if(l.metodo==="credito") p.parcelas=l.parcelas;
+    if(l.metodo==="dinheiro_estrangeiro"){ p.moeda=l.moeda; p.valor_moeda=l.valor_moeda; }
+    return p; });
 }
 function atualizar(){
   $("resumo-pac").textContent = nomeAtual() || "Nenhum paciente";
+  st.forma=formaResumo();
+  if(!st.japago){ const soma=Math.round(st.linhas.reduce((a,l)=>a+(l.valor||0),0)*100)/100; $("valor").value = soma?fmtBRL(soma):""; }
   const v=parseBRL($("valor").value); $("resumo-valor").textContent = st.forma ? fmtBRL(v) : "";
-  const soma = pagamentos().reduce((s,p)=>s+(p.valor||0),0);
-  const msg = (el)=>{ if(!v){ el.textContent=""; return; } const dif=v-soma; el.className = Math.abs(dif)<.01?"hint":"warn";
-    el.textContent = Math.abs(dif)<.01 ? "Soma confere ✓" : `Soma ${fmtBRL(soma)} · ${dif>0?"faltam":"sobram"} ${fmtBRL(Math.abs(dif))}`; };
-  if(st.forma==="dois_cartoes") msg($("soma2")); if(st.forma==="cartao_pix") msg($("soma3"));
   if(!st.nfTocado && st.forma){ const semPag = st.forma==="ja_pago" || !v; if(semPag && st.nf!=="nao_pagou") escolherNF("nao_pagou",true); else if(!semPag && st.nf==="nao_pagou") { st.nf=null; [...$("nfs").children].forEach(b=>b.classList.remove("on")); } }
   atualizarNF();
   const exige=precisaRecibo(); $("req-recibo").style.display=exige?"inline":"none";
-  $("hint-recibo").textContent = exige ? "Obrigatório: houve pagamento." : "Opcional: sem pagamento hoje.";
+  $("hint-recibo").textContent = exige ? "Obrigatório: teve Pix ou cartão." : (st.linhas.some(l=>l.valor>0) ? "Opcional: pagamento só em dinheiro." : "Opcional: sem pagamento hoje.");
 }
-function precisaRecibo(){ return !!st.forma && st.forma!=="ja_pago" && parseBRL($("valor").value)>0; }
+function precisaRecibo(){ return !st.japago && st.linhas.some(l=>l.valor>0 && !l.metodo.startsWith("dinheiro")); }
 function coletar(){
   const faltas=[];
   const nome=nomeAtual(); if(!nome) faltas.push("paciente");
   if(!$("data").value || !$("hora").value) faltas.push("data do atendimento");
   if(!st.forma) faltas.push("método de pagamento");
   const valor=parseBRL($("valor").value);
-  if(st.forma && st.forma!=="ja_pago" && !valor) faltas.push("valor pago");
-  if(st.forma==="dois_cartoes"||st.forma==="cartao_pix"){ const s=pagamentos().reduce((a,p)=>a+p.valor,0); if(Math.abs(s-valor)>.01) faltas.push("soma dos pagamentos não bate com o valor pago"); }
+  if(!st.japago){
+    st.linhas.forEach(l=>{ if(!l.valor) faltas.push(`valor de ${NOME_MET[l.metodo]}`);
+      if(l.metodo==="dinheiro_estrangeiro" && !l.valor_moeda) faltas.push(`valor em ${SIMB[l.moeda]}`); });
+  }
   if(!st.procs.size) faltas.push("procedimento");
   if(st.prox===null) faltas.push("se agendou próxima consulta");
   if(st.prox && !$("prox-data").value) faltas.push("data da próxima consulta");
@@ -477,7 +507,7 @@ function coletar(){
     id:st.id, data_atendimento:`${$("data").value}T${$("hora").value}`, paciente_nome:nome,
     amigo_patient_id: st.paciente?.patient_id ?? null, amigo_attendance_id: st.paciente?.attendance_id ?? null,
     valor_pago:valor, forma_pagamento:st.forma, pagamentos:pagamentos(),
-    parcelas: st.forma==="credito_parcelado" ? +$("parcelas").value : null,
+    parcelas: st.forma==="credito_parcelado" ? st.linhas[0].parcelas : null,
     agendou_proxima:st.prox, proxima_consulta: st.prox ? ($("prox-data").value + ($("prox-hora").value?`T${$("prox-hora").value}`:"")) : null,
     procedimentos:[...st.procs], obs_procedimento:$("obs").value.trim()||null,
     paciente_antiga:st.antiga, como_conheceu: st.antiga ? null : st.origem,
@@ -510,13 +540,14 @@ async function salvar(){
 
 function novo(){
   st=estadoInicial();
-  ["nome","valor","c1v","c2v","cpv","pxv","obs","prox-data","prox-hora","novo-proc","nf-cval","nf-cdata","nf-ult","nf-ival","nf-idata"].forEach(i=>$(i).value="");
+  ["nome","valor","obs","prox-data","prox-hora","novo-proc","nf-cval","nf-cdata","nf-ult","nf-ival","nf-idata"].forEach(i=>$(i).value="");
   $("nf-qtd").value="1"; $("nf-dias").value="30";
   ["cam","arq"].forEach(i=>$(i).value="");
   $("prev").style.display="none"; $("prev").innerHTML="";
   document.querySelectorAll(".chip.on").forEach(b=>b.classList.remove("on"));
-  ["box-parcelas","box-2cartoes","box-cartaopix","box-prox","box-origem","box-novo","box-avulso","box-nf"].forEach(i=>$(i).classList.add("hide"));
+  ["box-prox","box-origem","box-novo","box-avulso","box-nf"].forEach(i=>$(i).classList.add("hide"));
   $("hint-japago").style.display="none"; $("form-err").style.display="none";
+  $("linhas-pag").innerHTML=""; $("valor").readOnly=true; $("lbl-valor").textContent="Total pago";
   $("data").value=hojeISO(); setHora($("hora"), agoraLocal().slice(11,16)); $("hoje").textContent=new Date().toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"2-digit"});
   montarProcs(); atualizar(); tela("form"); carregarAgenda();
 }
@@ -535,9 +566,7 @@ function iniciar(){ novo(); carregarListas(); }
 
 // eventos fixos
 horas15($("hora"), false); horas15($("prox-hora"), true);
-[["parcelas",2],["c1p",1],["c2p",1],["cpp",1]].forEach(([i,m])=>opcoesParcelas($(i),m));
-["valor","c1v","c2v","cpv","pxv"].forEach(i=>mascara($(i)));
-["c1p","c2p","cpp","parcelas"].forEach(i=>$(i).addEventListener("change",atualizar));
+mascara($("valor"));
 $("nome").addEventListener("input",atualizar);
 $("cam").onchange=(e)=>escolherArquivo(e.target.files[0]);
 $("arq").onchange=(e)=>escolherArquivo(e.target.files[0]);

@@ -9,11 +9,40 @@ export const FORMAS: Record<string, string> = {
   ja_pago: "Já estava pago",
   pix: "Pix",
   debito: "Débito",
+  credito: "Crédito",
   credito_vista: "Crédito à vista",
   credito_parcelado: "Crédito parcelado",
+  dinheiro: "Dinheiro",
+  dinheiro_estrangeiro: "Dinheiro em moeda estrangeira",
+  misto: "Vários métodos",
+  // legado (versões antigas do app)
   dois_cartoes: "2 cartões",
   cartao_pix: "Cartão + Pix",
 };
+
+const SIMBOLO: Record<string, string> = { EUR: "€", USD: "US$" };
+const moeda = (v: number, m: string) => `${SIMBOLO[m] ?? m} ${v.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
+
+/** Uma linha de pagamento em texto: "Crédito R$ 2.000,00 em 3x", "Dinheiro € 200,00 (R$ 1.250,00)". */
+export function textoLinha(p: Pagamento): string {
+  switch (p.metodo) {
+    case "pix": return `Pix ${brl(p.valor)}`;
+    case "dinheiro": return `Dinheiro ${brl(p.valor)}`;
+    case "dinheiro_estrangeiro": return `Dinheiro ${moeda(p.valor_moeda ?? 0, p.moeda ?? "EUR")} (${brl(p.valor)})`;
+    case "debito": return `Débito ${brl(p.valor)}`;
+    case "credito": return `Crédito ${brl(p.valor)} ${p.parcelas && p.parcelas > 1 ? `em ${p.parcelas}x` : "à vista"}`;
+    case "cartao": return `Cartão ${brl(p.valor)}${p.parcelas && p.parcelas > 1 ? ` ${p.parcelas}x` : " à vista"}`;
+    default: return `${p.metodo} ${brl(p.valor)}`;
+  }
+}
+const METODOS_LINHA = new Set(["pix", "dinheiro", "dinheiro_estrangeiro", "debito", "credito"]);
+/** Recibo é obrigatório quando alguma linha com valor não é dinheiro. */
+export function exigeRecibo(f: Fechamento): boolean {
+  if (f.forma_pagamento === "ja_pago" || !(f.valor_pago > 0)) return false;
+  const linhas = (f.pagamentos ?? []).filter((p) => p.valor > 0);
+  if (!linhas.length) return !String(f.forma_pagamento).startsWith("dinheiro");
+  return linhas.some((p) => !String(p.metodo).startsWith("dinheiro"));
+}
 
 export const ORIGENS: Record<string, string> = {
   indicacao: "indicação",
@@ -38,7 +67,7 @@ export const NF_TIPOS: Record<string, string> = {
 // Eventos da agenda do Amigo que não são paciente
 const IGNORAR = [/^nf\b/i, /representante/i, /hands on/i, /fabi - atendimentos particulares/i, /laser fabi/i];
 
-export interface Pagamento { metodo: string; valor: number; parcelas?: number }
+export interface Pagamento { metodo: string; valor: number; parcelas?: number; moeda?: string; valor_moeda?: number }
 
 export interface Fechamento {
   id: string;
@@ -221,15 +250,13 @@ export function dataBR(iso: string, comHora = true): string {
 }
 
 export function textoPagamento(f: Fechamento): string {
+  const linhas = (f.pagamentos ?? []).filter((p) => METODOS_LINHA.has(p.metodo));
+  if (f.forma_pagamento !== "ja_pago" && linhas.length > 1) return linhas.map(textoLinha).join(" + ");
+  if (linhas.length === 1 && (linhas[0].metodo === "dinheiro_estrangeiro")) return textoLinha(linhas[0]);
   const forma = FORMAS[f.forma_pagamento] ?? f.forma_pagamento;
-  if (f.forma_pagamento === "credito_parcelado") return `${forma} ${f.parcelas ?? "?"}x`;
+  if (f.forma_pagamento === "credito_parcelado") return `${forma} ${f.parcelas ?? linhas[0]?.parcelas ?? "?"}x`;
   if (f.forma_pagamento === "dois_cartoes" || f.forma_pagamento === "cartao_pix") {
-    const partes = f.pagamentos.map((p) => {
-      const nome = p.metodo === "pix" ? "Pix" : "Cartão";
-      const parc = p.metodo !== "pix" && p.parcelas && p.parcelas > 1 ? ` ${p.parcelas}x` : p.metodo !== "pix" ? " à vista" : "";
-      return `${nome} ${brl(p.valor)}${parc}`;
-    });
-    return `${forma}: ${partes.join(" + ")}`;
+    return `${forma}: ${f.pagamentos.map(textoLinha).join(" + ")}`;
   }
   return forma;
 }
@@ -243,8 +270,12 @@ export function validar(f: Fechamento): string[] {
   if (!(f.valor_pago >= 0)) erros.push("Valor pago");
   if (!f.procedimentos?.length) erros.push("Procedimento realizado");
   if (f.forma_pagamento === "credito_parcelado" && !(f.parcelas && f.parcelas >= 2)) erros.push("Número de parcelas");
-  if (f.forma_pagamento === "dois_cartoes" || f.forma_pagamento === "cartao_pix") {
-    const soma = f.pagamentos.reduce((s, p) => s + (p.valor || 0), 0);
+  for (const p of (f.pagamentos ?? []).filter((x) => x.metodo !== "ja_pago")) {
+    if (!(p.valor > 0)) erros.push(`Valor de ${FORMAS[p.metodo] ?? p.metodo}`);
+    if (p.metodo === "dinheiro_estrangeiro" && !(p.valor_moeda && p.valor_moeda > 0)) erros.push("Valor na moeda estrangeira");
+  }
+  if (["dois_cartoes", "cartao_pix", "misto"].includes(f.forma_pagamento) || (f.pagamentos ?? []).length > 1) {
+    const soma = (f.pagamentos ?? []).reduce((s, p) => s + (p.valor || 0), 0);
     if (Math.abs(soma - f.valor_pago) > 0.01) erros.push(`Soma dos pagamentos (${brl(soma)}) diferente do valor pago (${brl(f.valor_pago)})`);
   }
   if (f.agendou_proxima && !f.proxima_consulta) erros.push("Data da próxima consulta");
@@ -383,8 +414,8 @@ export function celulasLinha(
   if (c.forma !== undefined) cel.push({ col: c.forma, valor: pag });
   if (c.parcelas !== undefined) {
     const p = f.forma_pagamento === "credito_parcelado" ? (f.parcelas ?? "") :
-      f.forma_pagamento === "dois_cartoes" || f.forma_pagamento === "cartao_pix"
-        ? f.pagamentos.filter((x) => x.metodo !== "pix").map((x) => `${x.parcelas ?? 1}x`).join(" + ")
+      ["dois_cartoes", "cartao_pix", "misto"].includes(f.forma_pagamento)
+        ? f.pagamentos.filter((x) => x.metodo === "cartao" || x.metodo === "credito").map((x) => `${x.parcelas ?? 1}x`).join(" + ")
         : f.forma_pagamento === "credito_vista" ? 1 : "";
     if (p !== "") cel.push({ col: c.parcelas, valor: p as any });
   }
